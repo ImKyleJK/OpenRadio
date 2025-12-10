@@ -1,9 +1,8 @@
 import type React from "react"
 import type { Metadata, Viewport } from "next"
 import { Inter, Geist_Mono } from "next/font/google"
-import { AuthProvider } from "@/context/auth-context"
-import { Toaster } from "@/components/ui/toaster"
 import { stationConfig, stationThemeVars } from "@/lib/station-config"
+import { AppProviders } from "./providers"
 import "./globals.css"
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" })
@@ -46,10 +45,7 @@ export default function RootLayout({
         style={stationThemeVars as React.CSSProperties}
         className={`${inter.variable} ${geistMono.variable} font-sans antialiased`}
       >
-        <AuthProvider>
-          {children}
-          <Toaster />
-        </AuthProvider>
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   )

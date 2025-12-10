@@ -1,15 +1,16 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRadio } from "@/context/radio-context"
 import { useAuth } from "@/context/auth-context"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
-import { Play, Pause, Volume2, VolumeX, Heart, Users, Radio, Share2, BarChart3, Hand } from "lucide-react"
+import { Play, Pause, Volume2, VolumeX, Heart, Users, Radio, Share2, BarChart3, Hand, UserPlus } from "lucide-react"
 import Image from "next/image"
 import { RequestModal } from "@/components/request-modal"
 import { BackgroundVisualizer } from "@/components/background-visualizer"
+import { stationConfig } from "@/lib/station-config"
 
 export function HeroSection() {
   const {
@@ -33,11 +34,159 @@ export function HeroSection() {
 
   const [requestModalOpen, setRequestModalOpen] = useState(false)
   const [liked, setLiked] = useState(false)
+  const [likeCount, setLikeCount] = useState(0)
+  const [isLiking, setIsLiking] = useState(false)
+  const [followStats, setFollowStats] = useState({ count: 0, isFollowing: false, canFollow: false, displayName: "" })
+  const [followLoading, setFollowLoading] = useState(false)
+  const [albumTilt, setAlbumTilt] = useState({ rotateX: 0, rotateY: 0 })
+  const BASE_ALBUM_TILT_X = -8
+  const BASE_ALBUM_TILT_Y = -4
   const { toast } = useToast()
 
-  const backgroundImage = currentTrack?.artwork || currentShow?.artwork || "/abstract-music-waves.png"
-  const djArtwork = hasLoadedNowPlaying ? currentShow?.artwork : undefined
   const trackArtwork = hasLoadedNowPlaying ? currentTrack?.artwork : undefined
+  const backgroundImage = currentTrack?.artwork || currentShow?.artwork || "/abstract-music-waves.png"
+  const djArtwork = isLive
+    ? currentShow?.artwork || trackArtwork || stationConfig.logo || "/placeholder.svg"
+    : stationConfig.logo || trackArtwork || "/placeholder.svg"
+  const trackTitle = currentTrack?.title
+  const trackArtist = currentTrack?.artist
+  const isAutoDJ = (currentShow?.dj || "").toLowerCase() === "autodj"
+
+  useEffect(() => {
+    if (!hasLoadedNowPlaying) return
+    setLiked(false)
+    setLikeCount(0)
+    const controller = new AbortController()
+    const fetchLikes = async () => {
+      try {
+        const res = await fetch(`/api/tracks/like`, { signal: controller.signal })
+        if (!res.ok) return
+        const data = await res.json()
+        setLiked(Boolean(data.liked))
+        setLikeCount(data.likeCount || 0)
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") {
+          console.error("Failed to load like info", error)
+        }
+      }
+    }
+    void fetchLikes()
+    return () => controller.abort()
+  }, [trackTitle, trackArtist, hasLoadedNowPlaying])
+
+  useEffect(() => {
+    const handleMove = (event: MouseEvent) => {
+      const { innerWidth, innerHeight } = window
+      const rotateY = ((event.clientX / innerWidth - 0.5) * -10) || 0
+      const rotateX = ((event.clientY / innerHeight - 0.5) * 10) || 0
+      setAlbumTilt({ rotateX, rotateY })
+    }
+    window.addEventListener("mousemove", handleMove)
+    return () => window.removeEventListener("mousemove", handleMove)
+  }, [])
+
+  useEffect(() => {
+    if (!currentShow?.dj) {
+      setFollowStats((prev) => ({ ...prev, count: 0, isFollowing: false, canFollow: false, displayName: "" }))
+      return
+    }
+    const controller = new AbortController()
+    const fetchFollowStats = async () => {
+      try {
+        const res = await fetch(`/api/djs/follow?displayName=${encodeURIComponent(currentShow.dj!)}`, {
+          signal: controller.signal,
+          cache: "no-store",
+        })
+        if (!res.ok) return
+        const data = await res.json()
+        setFollowStats({
+          count: data.followerCount || 0,
+          isFollowing: Boolean(data.isFollowing),
+          canFollow: Boolean(data.canFollow),
+          displayName: data.displayName || currentShow.dj || "",
+        })
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") {
+          console.error("Failed to load follow stats", error)
+        }
+      }
+    }
+    void fetchFollowStats()
+    return () => controller.abort()
+  }, [currentShow?.dj, user])
+
+  const albumArtStyle = useMemo(
+    () => ({
+      transform: `rotateX(${BASE_ALBUM_TILT_X + albumTilt.rotateX}deg) rotateY(${BASE_ALBUM_TILT_Y + albumTilt.rotateY}deg) rotateZ(-6deg) translate3d(${(BASE_ALBUM_TILT_Y + albumTilt.rotateY) * 1.5}px, ${(BASE_ALBUM_TILT_X + albumTilt.rotateX) * 1.2}px, 0)`,
+      transition: "transform 0.35s ease-out",
+    }),
+    [albumTilt],
+  )
+
+  const handleLike = async () => {
+    if (!user) {
+      toast({ title: "Login required", description: "Sign in to like tracks.", variant: "destructive" })
+      return
+    }
+    setIsLiking(true)
+    try {
+      const res = await fetch("/api/tracks/like", {
+        method: "POST",
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || "Unable to update like")
+      }
+      setLiked(Boolean(data.liked))
+      setLikeCount(data.likeCount ?? 0)
+    } catch (error) {
+      toast({
+        title: "Could not update like",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      })
+    } finally {
+      setIsLiking(false)
+    }
+  }
+
+  const handleFollow = async () => {
+    if (!followStats.canFollow) {
+      toast({
+        title: "Following unavailable",
+        description: "You need to be logged in and listening to follow this DJ.",
+        variant: "destructive",
+      })
+      return
+    }
+    setFollowLoading(true)
+    try {
+      const res = await fetch("/api/djs/follow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ displayName: followStats.displayName || currentShow?.dj }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || "Unable to update follow state")
+      }
+      setFollowStats((prev) => ({
+        ...prev,
+        count: data.followerCount ?? prev.count,
+        isFollowing: data.isFollowing,
+      }))
+    } catch (error) {
+      toast({
+        title: "Could not update follow",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      })
+    } finally {
+      setFollowLoading(false)
+    }
+  }
+
+  const displayedLikes = isAutoDJ ? followStats.count : likeCount
 
   return (
     <>
@@ -119,42 +268,58 @@ export function HeroSection() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Heart className="h-4 w-4" />
-                  <span>2.4k likes</span>
+                  <span>
+                    {displayedLikes.toLocaleString()} like{displayedLikes === 1 ? "" : "s"}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Radio className="h-4 w-4" />
-                  <span>128 shows</span>
+                  <span>{currentShow?.stats?.shows ?? "128"} shows</span>
                 </div>
               </div>
 
               {/* Follow button */}
-              <Button variant="outline" className="mt-6 gap-2 border-white/20 hover:bg-white/10 bg-transparent">
-                <Heart className="h-4 w-4" />
-                Follow DJ
+              <div className="mt-6 flex flex-col items-center md:items-start gap-2">
+                <Button
+                  variant="outline"
+                  className={`gap-2 border-white/20 bg-transparent ${
+                    !followStats.canFollow ? "opacity-50 cursor-not-allowed" : "hover:bg-white/10"
+                  }`}
+                  disabled={followLoading || !followStats.displayName || !followStats.canFollow}
+                  onClick={handleFollow}
+                >
+                  <UserPlus className="h-4 w-4" />
+                  {followStats.canFollow
+                    ? followStats.isFollowing
+                      ? "Following"
+                      : `Follow ${currentShow?.dj || "DJ"}`
+                    : "Follow DJ"}
               </Button>
+              </div>
             </div>
 
             {/* Right side - Song Info */}
             <div className="flex flex-col items-center md:items-end text-center md:text-right order-1 md:order-2">
               {/* Album Art */}
-              <div className="relative mb-6">
+              <div className="relative w-full max-w-[20rem]" style={{ perspective: "1200px" }}>
+                <div className="absolute inset-6 -z-10 rounded-[36px] bg-primary/25 blur-3xl opacity-70" />
                 <div
-                  className={`w-48 h-48 md:w-64 md:h-64 lg:w-72 lg:h-72 rounded-2xl overflow-hidden shadow-2xl shadow-black/50 ring-1 ring-white/10 ${
-                    isLoadingNowPlaying && !hasLoadedNowPlaying ? "bg-secondary/50 animate-pulse" : ""
+                  className={`relative w-48 h-48 md:w-64 md:h-64 lg:w-72 lg:h-72 rounded-[32px] overflow-hidden shadow-[0_25px_90px_rgba(0,0,0,0.5)] ring-1 ring-white/10 bg-secondary/30 ${
+                    isLoadingNowPlaying && !hasLoadedNowPlaying ? "animate-pulse" : ""
                   }`}
+                  style={albumArtStyle}
                 >
                   {trackArtwork ? (
                     <Image
                       src={trackArtwork}
                       alt={currentTrack?.title || "Now Playing"}
                       fill
-                      className="object-cover"
+                      className="object-cover w-full h-full rounded-[32px]"
                       priority
                     />
                   ) : null}
+                  <div className="absolute inset-0 rounded-[32px] bg-gradient-to-br from-white/5 to-transparent pointer-events-none" />
                 </div>
-                {/* Vinyl effect overlay */}
-                <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-white/5 to-transparent pointer-events-none" />
               </div>
 
               {/* Track Info */}
@@ -265,32 +430,16 @@ export function HeroSection() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => {
-                    if (!user) {
-                      toast({
-                        variant: "destructive",
-                        title: "You must be signed in",
-                        description: (
-                          <span className="flex items-center gap-2 text-xs text-red-200">
-                            <Heart className="h-4 w-4 text-red-400" />
-                            Like tracks to keep favorites and stats.
-                            <a className="underline text-red-100" href="/register">
-                              Get started
-                            </a>
-                          </span>
-                        ),
-                        className:
-                          "border-red-500/70 bg-red-950/70 shadow-[0_0_12px_rgba(248,113,113,0.6)] text-red-100",
-                        duration: 5000,
-                      })
-                      return
-                    }
-                    setLiked((prev) => !prev)
-                  }}
+                  onClick={handleLike}
+                  disabled={isLiking}
                   className={`h-9 w-9 ${liked ? "text-pink-500" : "text-muted-foreground"} hover:text-foreground`}
                   aria-label={liked ? "Unlike track" : "Like track"}
                 >
-                  <Heart className={`h-5 w-5 ${liked ? "fill-pink-500" : ""}`} />
+                  {isLiking ? (
+                    <div className="h-5 w-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Heart className={`h-5 w-5 ${liked ? "fill-pink-500" : ""}`} />
+                  )}
                 </Button>
 
                 <Button

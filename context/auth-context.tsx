@@ -26,6 +26,7 @@ export function useAuth() {
 const mockUsers: (User & { password: string })[] = [
   {
     id: "1",
+    username: "station_admin",
     email: "admin@radio.com",
     password: "admin123",
     displayName: "Station Admin",
@@ -36,6 +37,7 @@ const mockUsers: (User & { password: string })[] = [
   },
   {
     id: "2",
+    username: "djluna",
     email: "dj@radio.com",
     password: "dj123",
     displayName: "DJ Luna",
@@ -47,6 +49,7 @@ const mockUsers: (User & { password: string })[] = [
   },
   {
     id: "3",
+    username: "writer",
     email: "writer@radio.com",
     password: "writer123",
     displayName: "Sarah Johnson",

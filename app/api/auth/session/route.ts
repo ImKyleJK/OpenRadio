@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth.server"
+import { findUserById } from "@/lib/users"
 
 export async function GET() {
   const session = await getSession()
@@ -8,5 +9,11 @@ export async function GET() {
     return NextResponse.json({ user: null }, { status: 401 })
   }
 
-  return NextResponse.json({ user: session.user })
+  const user = await findUserById(session.user.id)
+
+  if (!user) {
+    return NextResponse.json({ user: null }, { status: 401 })
+  }
+
+  return NextResponse.json({ user })
 }

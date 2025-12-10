@@ -30,7 +30,7 @@ import {
   UploadCloud,
 } from "lucide-react"
 
-type Step = "preflight" | "station" | "stream" | "admin" | "complete"
+type Step = "preflight" | "station" | "stream" | "database" | "admin" | "complete"
 
 interface PreflightCheck {
   name: string
@@ -46,6 +46,11 @@ export default function InstallPage() {
   const [isInstalling, setIsInstalling] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [installError, setInstallError] = useState("")
+  const [dbStatus, setDbStatus] = useState<"idle" | "checking" | "success" | "error">("idle")
+  const [dbStatusMessage, setDbStatusMessage] = useState("")
+  const [envStatus, setEnvStatus] = useState<"idle" | "saving" | "success" | "error">("idle")
+  const [envStatusMessage, setEnvStatusMessage] = useState("")
+  const [generatedJwtSecret, setGeneratedJwtSecret] = useState<string | null>(null)
 
   const [preflightChecks, setPreflightChecks] = useState<PreflightCheck[]>([
     { name: "Station Name", key: "NEXT_PUBLIC_STATION_NAME", status: "pending" },
@@ -95,6 +100,7 @@ export default function InstallPage() {
     { key: "preflight", title: "Preflight", icon: <Database className="h-4 w-4" /> },
     { key: "station", title: "Station", icon: <Radio className="h-4 w-4" /> },
     { key: "stream", title: "Stream", icon: <Wifi className="h-4 w-4" /> },
+    { key: "database", title: "Connections", icon: <Settings className="h-4 w-4" /> },
     { key: "admin", title: "Admin", icon: <User className="h-4 w-4" /> },
     { key: "complete", title: "Complete", icon: <Rocket className="h-4 w-4" /> },
   ]
@@ -168,8 +174,63 @@ export default function InstallPage() {
     setLogoPreview(stationData.logo)
   }, [stationData.logo])
 
+  useEffect(() => {
+    setDbStatus("idle")
+    setDbStatusMessage("")
+  }, [dbUri])
+
+  useEffect(() => {
+    setEnvStatus("idle")
+    setEnvStatusMessage("")
+  }, [
+    stationData.name,
+    stationData.tagline,
+    stationData.description,
+    stationData.logo,
+    stationData.primaryColor,
+    streamData.streamUrl,
+    streamData.azuracastUrl,
+    streamData.mountpoint,
+    streamData.bitrate,
+    streamData.format,
+    spotifyData.clientId,
+    spotifyData.clientSecret,
+    dbUri,
+    jwtSecret,
+  ])
+
+  useEffect(() => {
+    if (jwtSecret.trim()) {
+      setGeneratedJwtSecret(null)
+    }
+  }, [jwtSecret])
+
   const allChecksPassed = preflightChecks.every((c) => c.status === "passed")
   const someChecksFailed = preflightChecks.some((c) => c.status === "failed")
+  const canContinueFromDatabase = dbStatus === "success" && envStatus === "success"
+
+  const resolveJwtSecret = () => {
+    const manualSecret = jwtSecret.trim()
+    if (manualSecret) return manualSecret
+    if (generatedJwtSecret) return generatedJwtSecret
+    const newSecret = crypto.randomUUID()
+    setGeneratedJwtSecret(newSecret)
+    return newSecret
+  }
+
+  const buildConfigPayload = () => ({
+    stationName: stationData.name.trim(),
+    tagline: stationData.tagline.trim(),
+    description: stationData.description.trim(),
+    logo: stationData.logo.trim(),
+    primaryColor: stationData.primaryColor.trim(),
+    streamUrl: streamData.streamUrl.trim(),
+    azuracastUrl: streamData.azuracastUrl.trim(),
+    mongoUri: dbUri.trim(),
+    jwtSecret: resolveJwtSecret(),
+    spotifyClientId: spotifyData.clientId.trim(),
+    spotifyClientSecret: spotifyData.clientSecret.trim(),
+  })
 
   const validateStep = (step: Step): boolean => {
     const newErrors: Record<string, string> = {}
@@ -183,10 +244,13 @@ export default function InstallPage() {
       if (!streamData.streamUrl.trim()) newErrors.streamUrl = "Stream URL is required"
     }
 
-    if (step === "admin") {
+    if (step === "database") {
       if (!dbUri.trim()) newErrors.dbUri = "MongoDB URI is required"
       if (!spotifyData.clientId.trim()) newErrors.spotifyClientId = "Spotify Client ID is required"
       if (!spotifyData.clientSecret.trim()) newErrors.spotifyClientSecret = "Spotify Client Secret is required"
+    }
+
+    if (step === "admin") {
       if (!adminData.email.trim()) newErrors.email = "Email is required"
       if (!adminData.email.includes("@")) newErrors.email = "Invalid email format"
       if (!adminData.password) newErrors.password = "Password is required"
@@ -200,7 +264,7 @@ export default function InstallPage() {
   }
 
   const nextStep = () => {
-    const stepOrder: Step[] = ["preflight", "station", "stream", "admin", "complete"]
+    const stepOrder: Step[] = ["preflight", "station", "stream", "database", "admin", "complete"]
     const currentIndex = stepOrder.indexOf(currentStep)
 
     if (currentStep !== "preflight" && !validateStep(currentStep)) {
@@ -215,7 +279,7 @@ export default function InstallPage() {
   }
 
   const prevStep = () => {
-    const stepOrder: Step[] = ["preflight", "station", "stream", "admin", "complete"]
+    const stepOrder: Step[] = ["preflight", "station", "stream", "database", "admin", "complete"]
     const currentIndex = stepOrder.indexOf(currentStep)
     if (currentIndex > 0) {
       setCurrentStep(stepOrder[currentIndex - 1])
@@ -262,39 +326,80 @@ export default function InstallPage() {
     }
   }
 
+  const verifyDatabaseAndSaveEnv = async () => {
+    const isValid = validateStep("database")
+    if (!isValid) return
+
+    setInstallError("")
+    setDbStatus("checking")
+    setDbStatusMessage("")
+    setEnvStatus("idle")
+    setEnvStatusMessage("")
+
+    try {
+      const verifyResponse = await fetch("/api/install/verify-db", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ mongoUri: dbUri.trim() }),
+      })
+      const verifyData = (await verifyResponse.json().catch(() => ({}))) as { collections?: string[]; error?: string }
+      if (!verifyResponse.ok) {
+        throw new Error(verifyData.error || "Unable to verify database connection")
+      }
+      const collectionsCount = verifyData?.collections?.length ?? 0
+      setDbStatus("success")
+      setDbStatusMessage(
+        collectionsCount
+          ? `Connection verified. ${collectionsCount} collection${collectionsCount === 1 ? "" : "s"} detected.`
+          : "Connection verified.",
+      )
+    } catch (error) {
+      console.error("Database verification failed", error)
+      setDbStatus("error")
+      setDbStatusMessage(
+        error instanceof Error ? error.message : "Unable to verify database. Check your URI and try again.",
+      )
+      return
+    }
+
+    setEnvStatus("saving")
+    setEnvStatusMessage("")
+    try {
+      const configResponse = await fetch("/api/install/config", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(buildConfigPayload()),
+      })
+      const configData = (await configResponse.json().catch(() => ({}))) as { path?: string; error?: string }
+      if (!configResponse.ok) {
+        throw new Error(configData.error || "Failed to write configuration to .env.local")
+      }
+      setEnvStatus("success")
+      setEnvStatusMessage(configData.path ? `Configuration saved to ${configData.path}` : "Saved to .env.local")
+    } catch (error) {
+      console.error("Saving configuration failed", error)
+      setEnvStatus("error")
+      setEnvStatusMessage(
+        error instanceof Error ? error.message : "Unable to write configuration. Check file permissions.",
+      )
+    }
+  }
+
   const finishInstallation = async () => {
     if (!validateStep("admin")) return
+    if (!canContinueFromDatabase) {
+      setInstallError("Verify your database connection and save .env.local before creating the admin account.")
+      return
+    }
 
     setInstallError("")
     setIsInstalling(true)
 
     try {
-      const effectiveJwtSecret = jwtSecret.trim() || crypto.randomUUID()
-
-      const response = await fetch("/api/install/config", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          stationName: stationData.name.trim(),
-          tagline: stationData.tagline.trim(),
-          description: stationData.description.trim(),
-          logo: stationData.logo.trim(),
-          primaryColor: stationData.primaryColor.trim(),
-          streamUrl: streamData.streamUrl.trim(),
-          azuracastUrl: streamData.azuracastUrl.trim(),
-          mongoUri: dbUri.trim(),
-          jwtSecret: effectiveJwtSecret,
-          spotifyClientId: spotifyData.clientId.trim(),
-          spotifyClientSecret: spotifyData.clientSecret.trim(),
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to persist configuration")
-      }
-
       const adminResponse = await fetch("/api/install/admin", {
         method: "POST",
         headers: {
@@ -317,7 +422,7 @@ export default function InstallPage() {
     } catch (error) {
       console.error("Installation failed", error)
       setInstallError(
-        error instanceof Error ? error.message : "Could not write configuration to .env.local. Check permissions and try again.",
+        error instanceof Error ? error.message : "Could not create the admin account. Check the logs and try again.",
       )
     } finally {
       setIsInstalling(false)
@@ -646,13 +751,14 @@ export default function InstallPage() {
             </div>
           )}
 
-          {/* Admin Setup */}
-          {currentStep === "admin" && (
-            <div className="space-y-6">
+          {/* Database & Secrets */}
+          {currentStep === "database" && (
+            <div className="space-y-8">
               <div>
-                <h3 className="text-lg font-semibold mb-2">Create Admin Account</h3>
+                <h3 className="text-lg font-semibold mb-2">Connections & Secrets</h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Set up your administrator account to manage the station.
+                  Provide your database credentials and API keys, then verify connectivity and write the .env file before
+                  creating user accounts.
                 </p>
               </div>
 
@@ -699,8 +805,113 @@ export default function InstallPage() {
                     onChange={(e) => setJwtSecret(e.target.value)}
                     placeholder="Leave blank to auto-generate"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    If left blank, a secure secret will be generated and written to .env.local during verification.
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border/60 bg-secondary/40 p-4 space-y-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-medium">Verify database & save configuration</p>
+                    <p className="text-sm text-muted-foreground">
+                      We&apos;ll connect to MongoDB and persist your station metadata to .env.local.
+                    </p>
+                  </div>
+                  <Button onClick={verifyDatabaseAndSaveEnv} disabled={dbStatus === "checking" || envStatus === "saving"}>
+                    {dbStatus === "checking" || envStatus === "saving" ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        Working...
+                      </>
+                    ) : canContinueFromDatabase ? (
+                      <>
+                        Verified
+                        <CheckCircle2 className="h-4 w-4 ml-2" />
+                      </>
+                    ) : (
+                      <>
+                        Verify & Save
+                        <ArrowRight className="h-4 w-4 ml-2" />
+                      </>
+                    )}
+                  </Button>
                 </div>
 
+                <div className="grid gap-2 text-sm">
+                  <div
+                    className={`flex items-start gap-2 ${
+                      dbStatus === "success"
+                        ? "text-green-500"
+                        : dbStatus === "error"
+                          ? "text-red-500"
+                          : "text-muted-foreground"
+                    }`}
+                  >
+                    <Database className="h-4 w-4 mt-0.5" />
+                    <div>
+                      <p className="font-medium">Database status</p>
+                      <p>{dbStatusMessage || "Awaiting verification."}</p>
+                    </div>
+                  </div>
+                  <div
+                    className={`flex items-start gap-2 ${
+                      envStatus === "success"
+                        ? "text-green-500"
+                        : envStatus === "error"
+                          ? "text-red-500"
+                          : "text-muted-foreground"
+                    }`}
+                  >
+                    <Settings className="h-4 w-4 mt-0.5" />
+                    <div>
+                      <p className="font-medium">Environment file</p>
+                      <p>{envStatusMessage || "Configuration has not been written to .env.local yet."}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {envStatus === "error" && (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Couldn&apos;t save configuration</AlertTitle>
+                    <AlertDescription>{envStatusMessage}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pt-2">
+                <Button variant="outline" onClick={prevStep}>
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back
+                </Button>
+                <div className="flex flex-col items-end gap-1">
+                  <Button onClick={nextStep} disabled={!canContinueFromDatabase}>
+                    Continue
+                    <ArrowRight className="h-4 w-4 ml-2" />
+                  </Button>
+                  {!canContinueFromDatabase && (
+                    <p className="text-xs text-muted-foreground">
+                      Verify the database and save your .env before continuing.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Admin Setup */}
+          {currentStep === "admin" && (
+            <div className="space-y-8">
+              <div>
+                <h3 className="text-lg font-semibold mb-2">Create Admin Account</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  With your configuration saved, finish the install by provisioning the first account.
+                </p>
+              </div>
+
+              <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="displayName">Display Name *</Label>
                   <Input
@@ -764,7 +975,8 @@ export default function InstallPage() {
                 <Settings className="h-4 w-4" />
                 <AlertTitle>Important</AlertTitle>
                 <AlertDescription>
-                  This will create the initial admin account. Make sure to save these credentials securely.
+                  This will create the initial admin account. Make sure to save these credentials securely. Database and
+                  environment values have already been written.
                 </AlertDescription>
               </Alert>
 
@@ -781,11 +993,11 @@ export default function InstallPage() {
                   <ArrowLeft className="h-4 w-4 mr-2" />
                   Back
                 </Button>
-                <Button onClick={finishInstallation} disabled={isInstalling || logoUploading}>
+                <Button onClick={finishInstallation} disabled={isInstalling}>
                   {isInstalling ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      Installing...
+                      Creating account...
                     </>
                   ) : (
                     <>
@@ -835,7 +1047,7 @@ export default function InstallPage() {
                     <div>NEXT_PUBLIC_STREAM_URL={streamData.streamUrl}</div>
                     <div>NEXT_PUBLIC_AZURACAST_API_URL={streamData.azuracastUrl}</div>
                     <div>MONGODB_URI={dbUri}</div>
-                    <div>JWT_SECRET={jwtSecret || "[auto-generated]"}</div>
+                    <div>JWT_SECRET={jwtSecret || generatedJwtSecret || "[auto-generated]"}</div>
                     <div>SPOTIFY_CLIENT_ID={spotifyData.clientId}</div>
                     <div>SPOTIFY_CLIENT_SECRET={[...spotifyData.clientSecret].map(() => "*").join("") || "[set]"}</div>
                   </div>

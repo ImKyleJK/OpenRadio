@@ -16,6 +16,7 @@ export async function PATCH(request: Request) {
     const sanitizedUpdates = { ...updates }
     delete (sanitizedUpdates as Record<string, unknown>).role
     delete (sanitizedUpdates as Record<string, unknown>).email
+    delete (sanitizedUpdates as Record<string, unknown>).username
 
     const updatedUser = (await updateUser(session.user.id, sanitizedUpdates)) as User | null
 

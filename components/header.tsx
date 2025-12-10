@@ -79,7 +79,7 @@ export function Header() {
           </Link>
 
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center gap-6">
+          <nav className="hidden md:flex items-center gap-10 rounded-full border border-white/20 bg-background/40 px-8 py-3 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
             <Link href="/" className="flex items-center gap-2 text-sm font-medium text-foreground/80 hover:text-primary transition-colors">
               <Home className="h-4 w-4" />
               Home

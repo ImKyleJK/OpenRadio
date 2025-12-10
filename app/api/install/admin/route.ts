@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import bcrypt from "bcryptjs"
 import { MongoClient } from "mongodb"
 import type { UserRole } from "@/lib/auth"
+import { generateUniqueUsername } from "@/lib/users"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
     const db = client.db()
     const users = db.collection("users")
     await users.createIndex({ email: 1 }, { unique: true })
+    await users.createIndex({ username: 1 }, { unique: true })
 
     const existing = await users.findOne({ email })
     if (existing) {
@@ -37,9 +39,11 @@ export async function POST(request: Request) {
     }
 
     const passwordHash = await bcrypt.hash(password, 10)
+    const username = await generateUniqueUsername(displayName, db)
     const adminDoc = {
       email,
       displayName,
+      username,
       role: "admin" as UserRole,
       passwordHash,
       createdAt: new Date().toISOString(),

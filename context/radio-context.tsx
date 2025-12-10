@@ -96,6 +96,7 @@ export function RadioProvider({ children }: { children: ReactNode }) {
   const analyserRef = useRef<AnalyserNode | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null)
+  const lastRecordedTrackSignatureRef = useRef<string | null>(null)
 
   // Stream URL would come from .env in production
   const streamUrl = stationConfig.streamUrl
@@ -275,14 +276,15 @@ export function RadioProvider({ children }: { children: ReactNode }) {
       const song = nowPlaying.song || {}
 
       setIsLive(Boolean(live.is_live))
-      setCurrentTrack({
+      const nextTrack = {
         title: song.title || song.text || "Unknown Track",
         artist: song.artist || "Unknown Artist",
         album: song.album,
         artwork: song.art || currentTrack?.artwork || stationConfig.logo,
         duration: nowPlaying.duration,
         elapsed: nowPlaying.elapsed,
-      })
+      }
+      setCurrentTrack(nextTrack)
 
       setCurrentShow({
         name: live.is_live ? live.streamer_name || "Live DJ" : "AutoDJ",
@@ -308,7 +310,28 @@ export function RadioProvider({ children }: { children: ReactNode }) {
 
       setListeners(listenersCount)
       setHasLoadedNowPlaying(true)
-      const key = `${song.title || song.text || ""}|${song.artist || ""}`
+      const trackKey = `${song.title || song.text || ""}|${song.artist || ""}`
+
+      if (trackKey.trim()) {
+        const playedAtSignature = nowPlaying.played_at ? `${trackKey}-${nowPlaying.played_at}` : trackKey
+        if (playedAtSignature !== lastRecordedTrackSignatureRef.current) {
+          lastRecordedTrackSignatureRef.current = playedAtSignature
+          const playedAtTimestamp = nowPlaying.played_at ? new Date(nowPlaying.played_at * 1000).toISOString() : undefined
+          void fetch("/api/tracks/play", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: nextTrack.title,
+              artist: nextTrack.artist,
+              album: nextTrack.album,
+              artwork: nextTrack.artwork,
+              playedAt: playedAtTimestamp,
+            }),
+          }).catch((error) => console.error("Failed to record track play", error))
+        }
+      }
+
+      const key = trackKey
       if (key !== lastEnrichedKeyRef.current) {
         nextRetryRef.current = 0
       }
