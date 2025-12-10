@@ -96,6 +96,36 @@ export async function createBooking({
   end: string
   requestedBy: User
 }): Promise<Booking> {
+  const { doc, collection } = await buildBookingDoc({
+    title,
+    description,
+    djId,
+    start,
+    end,
+    requestedBy,
+  })
+
+  const { insertedId } = await collection.insertOne(doc)
+  return { id: insertedId.toString(), ...doc }
+}
+
+async function buildBookingDoc({
+  title,
+  description,
+  djId,
+  start,
+  end,
+  requestedBy,
+  excludeBookingId,
+}: {
+  title: string
+  description?: string
+  djId?: string
+  start: string
+  end: string
+  requestedBy: User
+  excludeBookingId?: string
+}) {
   const startDate = new Date(start)
   const endDate = new Date(end)
   if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
@@ -105,25 +135,29 @@ export async function createBooking({
     throw new Error("End time must be after start time")
   }
 
-  const collection = await getCollection()
-
   const djUserId = djId || requestedBy.id
   const dj = await findUserById(djUserId)
   if (!dj || dj.role !== "dj") {
     throw new Error("DJ not found")
   }
 
+  const collection = await getCollection()
   const overlapping = await collection.findOne({
     status: { $in: ["pending", "approved"] },
     start: { $lt: endDate.toISOString() },
     end: { $gt: startDate.toISOString() },
+    ...(excludeBookingId ? { _id: { $ne: new ObjectId(excludeBookingId) } } : {}),
   })
   if (overlapping) {
     throw new Error("That slot is already booked")
   }
 
   const djBookings = await collection
-    .find({ djId: dj.id, status: { $in: ["pending", "approved"] } })
+    .find({
+      djId: dj.id,
+      status: { $in: ["pending", "approved"] },
+      ...(excludeBookingId ? { _id: { $ne: new ObjectId(excludeBookingId) } } : {}),
+    })
     .toArray()
 
   const adjacent = djBookings.find((booking) => {
@@ -140,6 +174,7 @@ export async function createBooking({
   }
 
   const nowIso = new Date().toISOString()
+
   const doc: BookingDoc = {
     title,
     description,
@@ -155,8 +190,7 @@ export async function createBooking({
     updatedAt: nowIso,
   }
 
-  const { insertedId } = await collection.insertOne(doc)
-  return { id: insertedId.toString(), ...doc }
+  return { doc, collection, dj }
 }
 
 export async function updateBookingStatus({
@@ -169,7 +203,7 @@ export async function updateBookingStatus({
   actedBy: User
 }): Promise<Booking> {
   const collection = await getCollection()
-  const { value } = await collection.findOneAndUpdate(
+  const result = await collection.findOneAndUpdate(
     { _id: new ObjectId(id) },
     {
       $set: {
@@ -181,6 +215,82 @@ export async function updateBookingStatus({
     },
     { returnDocument: "after" },
   )
+  const value = result?.value
+  if (!value) {
+    throw new Error("Booking not found")
+  }
+  return serialize(value as WithId<BookingDoc>)
+}
+
+export async function updateBookingDetails({
+  id,
+  title,
+  description,
+  start,
+  end,
+  status,
+  actedBy,
+}: {
+  id: string
+  title?: string
+  description?: string
+  start?: string
+  end?: string
+  status?: BookingStatus
+  actedBy: User
+}) {
+  const collection = await getCollection()
+  const existing = await collection.findOne({ _id: new ObjectId(id) })
+  if (!existing) {
+    throw new Error("Booking not found")
+  }
+
+  const updates: Partial<BookingDoc> = {
+    updatedAt: new Date().toISOString(),
+    actedById: actedBy.id,
+    actedByName: actedBy.displayName,
+  }
+
+  if (title) updates.title = title
+  if (typeof description === "string") updates.description = description
+  if (status) updates.status = status
+
+  if (start || end) {
+    const { doc } = await buildBookingDoc({
+      title: updates.title || existing.title,
+      description: updates.description ?? existing.description,
+      djId: existing.djId,
+      start: start ?? existing.start,
+      end: end ?? existing.end,
+      requestedBy: {
+        id: existing.djId,
+        displayName: existing.djName,
+        email: "",
+        username: existing.djId,
+        role: "dj",
+        createdAt: existing.createdAt,
+      } as User,
+      excludeBookingId: id,
+    })
+    updates.start = doc.start
+    updates.end = doc.end
+  }
+
+  const result = await collection.findOneAndUpdate(
+    { _id: new ObjectId(id) },
+    { $set: updates },
+    { returnDocument: "after" },
+  )
+
+  if (!result?.value) {
+    throw new Error("Booking not found")
+  }
+  return serialize(result.value as WithId<BookingDoc>)
+}
+
+export async function deleteBooking(id: string) {
+  const collection = await getCollection()
+  const { value } = await collection.findOneAndDelete({ _id: new ObjectId(id) })
   if (!value) {
     throw new Error("Booking not found")
   }

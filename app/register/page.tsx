@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import Image from "next/image"
@@ -12,8 +12,15 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Radio, UserPlus, AlertCircle, Eye, EyeOff, Check } from "lucide-react"
+import { Radio, UserPlus, AlertCircle, Eye, EyeOff, Check, Sparkles } from "lucide-react"
 import { stationConfig } from "@/lib/station-config"
+import { usernameFromDisplayName } from "@/lib/username"
+
+type EmailStatusState = "idle" | "checking" | "invalid" | "available" | "taken" | "error"
+
+const adjectives = ["lunar", "crimson", "midnight", "stellar", "velvet", "electric", "golden", "cosmic", "silver", "radiant"]
+const nouns = ["groove", "frequency", "echo", "pulse", "wave", "melody", "tempo", "rhythm", "signal", "anthem"]
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -25,11 +32,67 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [emailStatus, setEmailStatus] = useState<{ state: EmailStatusState; message?: string }>({ state: "idle" })
 
   const passwordRequirements = [
     { text: "At least 6 characters", met: password.length >= 6 },
     { text: "Passwords match", met: password === confirmPassword && password.length > 0 },
   ]
+
+  const derivedUsername = useMemo(() => usernameFromDisplayName(displayName), [displayName])
+
+  const randomizeDisplayName = () => {
+    const adjective = adjectives[Math.floor(Math.random() * adjectives.length)]
+    const noun = nouns[Math.floor(Math.random() * nouns.length)]
+    const suffix = Math.floor(Math.random() * 900 + 100)
+    const pretty = `${adjective} ${noun} ${suffix}`
+    setDisplayName(pretty.replace(/\b\w/g, (char) => char.toUpperCase()))
+  }
+
+  useEffect(() => {
+    if (!email) {
+      setEmailStatus({ state: "idle" })
+      return
+    }
+
+    const trimmed = email.trim().toLowerCase()
+    if (!emailRegex.test(trimmed)) {
+      setEmailStatus({ state: "invalid", message: "Enter a valid email." })
+      return
+    }
+
+    let active = true
+    const controller = new AbortController()
+    setEmailStatus({ state: "checking" })
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/auth/check-email?email=${encodeURIComponent(trimmed)}`, {
+          signal: controller.signal,
+          cache: "no-store",
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!active) return
+        if (res.ok && data.valid) {
+          setEmailStatus({
+            state: data.available ? "available" : "taken",
+            message: data.available ? "Email looks good." : "This email is already registered.",
+          })
+        } else {
+          setEmailStatus({ state: "invalid", message: data.error || "Enter a valid email." })
+        }
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return
+        if (!active) return
+        setEmailStatus({ state: "error", message: "Unable to verify email right now." })
+      }
+    }, 400)
+
+    return () => {
+      active = false
+      controller.abort()
+      clearTimeout(timer)
+    }
+  }, [email])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -45,9 +108,23 @@ export default function RegisterPage() {
       return
     }
 
+    const trimmedEmail = email.trim().toLowerCase()
+    if (!emailRegex.test(trimmedEmail)) {
+      setError("Enter a valid email address.")
+      return
+    }
+    if (emailStatus.state === "checking") {
+      setError("Hang tight, we're validating your email.")
+      return
+    }
+    if (emailStatus.state === "taken") {
+      setError("That email is already registered.")
+      return
+    }
+
     setIsLoading(true)
 
-    const result = await register(email, password, displayName)
+    const result = await register(trimmedEmail, password, displayName || "Listener")
 
     if (result.success) {
       router.push("/")
@@ -98,7 +175,13 @@ export default function RegisterPage() {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="displayName">Display Name</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="displayName">Display Name</Label>
+                <Button type="button" variant="ghost" size="sm" className="text-xs gap-1" onClick={randomizeDisplayName}>
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Surprise me
+                </Button>
+              </div>
               <Input
                 id="displayName"
                 type="text"
@@ -108,6 +191,10 @@ export default function RegisterPage() {
                 required
                 autoComplete="name"
               />
+              <p className="text-xs text-muted-foreground">
+                Your username will be{" "}
+                <span className="font-mono text-foreground">@{derivedUsername}</span>
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -121,6 +208,20 @@ export default function RegisterPage() {
                 required
                 autoComplete="email"
               />
+              {emailStatus.state !== "idle" && (
+                <p
+                  className={`text-xs ${
+                    emailStatus.state === "available"
+                      ? "text-green-500"
+                      : emailStatus.state === "checking"
+                        ? "text-muted-foreground"
+                        : "text-red-500"
+                  }`}
+                >
+                  {emailStatus.message ||
+                    (emailStatus.state === "checking" ? "Checking availability..." : "Enter a valid email.")}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -170,7 +271,12 @@ export default function RegisterPage() {
               ))}
             </div>
 
-            <Button type="submit" className="w-full" size="lg" disabled={isLoading}>
+            <Button
+              type="submit"
+              className="w-full"
+              size="lg"
+              disabled={isLoading || emailStatus.state === "invalid" || emailStatus.state === "taken"}
+            >
               {isLoading ? (
                 <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
               ) : (

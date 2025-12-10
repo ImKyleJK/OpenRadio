@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth.server"
-import { canAccessStaff } from "@/lib/auth"
+import { canAccessStaff, type UserRole } from "@/lib/auth"
 import { getDb } from "@/lib/mongodb"
 import { updateUser } from "@/lib/users"
 
@@ -46,6 +46,8 @@ export async function GET(request: Request) {
   return NextResponse.json({ users })
 }
 
+const allowedRoles: UserRole[] = ["listener", "dj", "writer", "staff", "admin"]
+
 export async function PATCH(request: Request) {
   const session = await getSession()
   if (!session || !canAccessStaff(session.user)) {
@@ -54,16 +56,34 @@ export async function PATCH(request: Request) {
 
   try {
     const body = await request.json()
-    const { userId, displayName, avatar } = body ?? {}
-    if (!userId || !displayName?.trim()) {
-      return NextResponse.json({ error: "Missing fields" }, { status: 400 })
+    const { userId, displayName, avatar, role } = body ?? {}
+    if (!userId) {
+      return NextResponse.json({ error: "Missing user id" }, { status: 400 })
     }
 
-    const updated = await updateUser(userId, {
-      displayName: displayName.trim(),
-      avatar: avatar?.trim() || undefined,
-      role: "dj",
-    })
+    const updatePayload: Record<string, unknown> = {}
+    if (typeof displayName === "string") {
+      const trimmed = displayName.trim()
+      if (!trimmed) {
+        return NextResponse.json({ error: "Display name cannot be empty" }, { status: 400 })
+      }
+      updatePayload.displayName = trimmed
+    }
+    if (typeof avatar === "string") {
+      updatePayload.avatar = avatar.trim() || undefined
+    }
+    if (typeof role === "string") {
+      if (!allowedRoles.includes(role as UserRole)) {
+        return NextResponse.json({ error: "Invalid role" }, { status: 400 })
+      }
+      updatePayload.role = role as UserRole
+    }
+
+    if (Object.keys(updatePayload).length === 0) {
+      return NextResponse.json({ error: "No changes submitted" }, { status: 400 })
+    }
+
+    const updated = await updateUser(userId, updatePayload)
 
     if (!updated) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
@@ -71,7 +91,7 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json({ user: updated })
   } catch (error) {
-    console.error("Failed to update DJ", error)
+    console.error("Failed to update user", error)
     return NextResponse.json({ error: "Unable to update user" }, { status: 500 })
   }
 }

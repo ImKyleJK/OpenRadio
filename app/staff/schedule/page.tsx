@@ -18,7 +18,8 @@ import { resolveAvatar } from "@/lib/avatar"
 
 interface DJOption {
   id: string
-  name: string
+  displayName?: string
+  name?: string
   avatar?: string
 }
 
@@ -55,6 +56,13 @@ const combineDateTime = (date: string, time: string) => {
   return combined.toISOString()
 }
 
+const extractLocalTime = (iso: string) => {
+  const date = new Date(iso)
+  const hours = String(date.getHours()).padStart(2, "0")
+  const minutes = String(date.getMinutes()).padStart(2, "0")
+  return `${hours}:${minutes}`
+}
+
 export default function SchedulePage() {
   const { toast } = useToast()
   const { user } = useAuth()
@@ -63,10 +71,15 @@ export default function SchedulePage() {
   const [isLoading, setIsLoading] = useState(true)
   const [weekOffset, setWeekOffset] = useState(0)
   const [isBookingOpen, setIsBookingOpen] = useState(false)
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null)
+  const [editForm, setEditForm] = useState({ title: "", description: "", date: "", startTime: "", endTime: "", status: "pending" as Booking["status"] })
   const [form, setForm] = useState({ title: "", description: "", djId: "", date: "", startTime: "", endTime: "" })
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [editLoading, setEditLoading] = useState(false)
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   const canApprove = user ? ["admin", "staff"].includes(user.role) : false
+  const canManageBookings = canApprove
 
   const weekStart = useMemo(() => getWeekStart(weekOffset), [weekOffset])
   const weekEnd = useMemo(() => {
@@ -123,6 +136,7 @@ export default function SchedulePage() {
   const pendingBookings = bookings.filter((booking) => booking.status === "pending")
   const approvedBookings = bookings.filter((booking) => booking.status === "approved")
   const isDjUser = user?.role === "dj"
+  const getDjLabel = (dj?: DJOption | null) => (dj?.displayName || dj?.name || "Unknown DJ").trim()
 
   const weekDays = useMemo(() => {
     return daysOfWeek.map((label, index) => {
@@ -134,6 +148,20 @@ export default function SchedulePage() {
   }, [weekStart])
 
   const hours = useMemo(() => Array.from({ length: 18 }, (_, i) => i + 6), [])
+  const totalSlots = weekDays.length * hours.length
+  const totalBookedSlots = bookings.length
+  const userBookedSlots = bookings.filter((booking) => booking.djId === user?.id).length
+  const freeSlots = Math.max(totalSlots - totalBookedSlots, 0)
+  const dayCounts = weekDays.map((day) => ({
+    day: day.label,
+    count: bookings.filter((booking) => booking.start.startsWith(day.iso)).length,
+  }))
+  const busiestDays = dayCounts
+    .filter((entry) => entry.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 2)
+    .map((entry) => `${entry.day} (${entry.count})`)
+  const busyLabel = busiestDays.length ? busiestDays.join(", ") : "No shows yet"
 
   const getBookingForCell = (dayIndex: number, hour: number) => {
     const slotStart = new Date(weekStart)
@@ -226,6 +254,77 @@ export default function SchedulePage() {
   }
 
   const bookingButtonDisabled = !form.title || !form.date || !form.startTime || !form.endTime || (!form.djId && !isDjUser)
+  const editButtonDisabled = !editForm.title || !editForm.date || !editForm.startTime || !editForm.endTime
+
+  const openEditDialog = (booking: Booking) => {
+    setEditingBooking(booking)
+    setEditForm({
+      title: booking.title,
+      description: booking.description || "",
+      date: booking.start.split("T")[0],
+      startTime: extractLocalTime(booking.start),
+      endTime: extractLocalTime(booking.end),
+      status: booking.status,
+    })
+  }
+
+  const handleEditBooking = async () => {
+    if (!editingBooking) return
+    if (!editForm.title.trim()) {
+      toast({ title: "Title required", variant: "destructive" })
+      return
+    }
+    const startIso = combineDateTime(editForm.date, editForm.startTime)
+    const endIso = combineDateTime(editForm.date, editForm.endTime)
+    if (!startIso || !endIso) {
+      toast({ title: "Provide a valid date and time", variant: "destructive" })
+      return
+    }
+    setEditLoading(true)
+    try {
+      const res = await fetch(`/api/bookings/${editingBooking.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: editForm.title,
+          description: editForm.description,
+          start: startIso,
+          end: endIso,
+          status: editForm.status,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || "Unable to update booking")
+      }
+      toast({ title: "Booking updated" })
+      setEditingBooking(null)
+      await fetchBookings()
+    } catch (error) {
+      toast({ title: "Update failed", description: error instanceof Error ? error.message : undefined, variant: "destructive" })
+    } finally {
+      setEditLoading(false)
+    }
+  }
+
+  const handleDeleteBooking = async () => {
+    if (!editingBooking) return
+    setDeleteLoading(true)
+    try {
+      const res = await fetch(`/api/bookings/${editingBooking.id}`, { method: "DELETE" })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || "Unable to delete booking")
+      }
+      toast({ title: "Booking removed" })
+      setEditingBooking(null)
+      await fetchBookings()
+    } catch (error) {
+      toast({ title: "Delete failed", description: error instanceof Error ? error.message : undefined, variant: "destructive" })
+    } finally {
+      setDeleteLoading(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -269,17 +368,20 @@ export default function SchedulePage() {
                       <SelectValue placeholder="Select a DJ" />
                     </SelectTrigger>
                     <SelectContent>
-                      {djs.map((dj) => (
-                        <SelectItem key={dj.id} value={dj.id}>
-                          <div className="flex items-center gap-2">
-                            <Avatar className="h-6 w-6">
-                            <AvatarImage src={resolveAvatar(dj)} />
-                              <AvatarFallback>{dj.name[0]}</AvatarFallback>
-                            </Avatar>
-                            {dj.name}
-                          </div>
-                        </SelectItem>
-                      ))}
+                      {djs.map((dj) => {
+                        const label = getDjLabel(dj)
+                        return (
+                          <SelectItem key={dj.id} value={dj.id}>
+                            <div className="flex items-center gap-2">
+                              <Avatar className="h-6 w-6">
+                                <AvatarImage src={resolveAvatar(dj)} />
+                                <AvatarFallback>{label.charAt(0).toUpperCase()}</AvatarFallback>
+                              </Avatar>
+                              {label}
+                            </div>
+                          </SelectItem>
+                        )
+                      })}
                     </SelectContent>
                   </Select>
                 </div>
@@ -316,6 +418,39 @@ export default function SchedulePage() {
         </Dialog>
       </div>
 
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="glass-card border-border/50">
+          <CardHeader className="pb-2">
+            <CardDescription>Total slots booked</CardDescription>
+            <CardTitle className="text-3xl">{totalBookedSlots}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">Out of {totalSlots} possible slots this week.</CardContent>
+        </Card>
+        <Card className="glass-card border-border/50">
+          <CardHeader className="pb-2">
+            <CardDescription>Your slots</CardDescription>
+            <CardTitle className="text-3xl">{userBookedSlots}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            {isDjUser ? "Shows you requested this week." : "Staff overview of this user’s bookings."}
+          </CardContent>
+        </Card>
+        <Card className="glass-card border-border/50">
+          <CardHeader className="pb-2">
+            <CardDescription>Free slots</CardDescription>
+            <CardTitle className="text-3xl">{freeSlots}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">Remaining openings between 6 AM and midnight.</CardContent>
+        </Card>
+        <Card className="glass-card border-border/50">
+          <CardHeader className="pb-2">
+            <CardDescription>Busiest days</CardDescription>
+            <CardTitle className="text-xl">{busyLabel}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">Based on approved + pending bookings.</CardContent>
+        </Card>
+      </div>
+
       {pendingBookings.length > 0 && (
         <Card className="glass-card border-border/50">
           <CardHeader>
@@ -327,9 +462,9 @@ export default function SchedulePage() {
             <CardDescription>Approve or reject upcoming bookings.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {pendingBookings.map((booking) => (
-              <div key={booking.id} className="flex flex-wrap gap-4 items-center justify-between border border-border/30 rounded-lg p-4 bg-muted/10">
-                <div className="flex items-center gap-3 min-w-0">
+              {pendingBookings.map((booking) => (
+                <div key={booking.id} className="flex flex-wrap gap-4 items-center justify-between border border-border/30 rounded-lg p-4 bg-muted/10">
+                  <div className="flex items-center gap-3 min-w-0">
                   <Avatar className="h-10 w-10">
                     <AvatarImage src={booking.djAvatar || "/placeholder.svg"} />
                     <AvatarFallback>{booking.djName[0]}</AvatarFallback>
@@ -361,6 +496,9 @@ export default function SchedulePage() {
                     >
                       <XCircle className="h-4 w-4 mr-1" /> Reject
                     </Button>
+                    <Button size="sm" variant="outline" onClick={() => openEditDialog(booking)}>
+                      Edit
+                    </Button>
                   </div>
                 ) : (
                   <Badge variant="outline" className="bg-muted/40">
@@ -377,6 +515,7 @@ export default function SchedulePage() {
         <TabsList>
           <TabsTrigger value="week">Week View</TabsTrigger>
           <TabsTrigger value="list">List View</TabsTrigger>
+          {isDjUser && <TabsTrigger value="mine">My Slots</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="week">
@@ -484,7 +623,7 @@ export default function SchedulePage() {
                     .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
                     .map((booking) => (
                       <div key={booking.id} className="flex flex-wrap items-center gap-3 border border-border/30 rounded-xl p-4">
-                        <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-3 min-w-0">
                           <Avatar className="h-10 w-10">
                             <AvatarImage src={booking.djAvatar || "/placeholder.svg"} />
                             <AvatarFallback>{booking.djName[0]}</AvatarFallback>
@@ -507,15 +646,127 @@ export default function SchedulePage() {
                             </div>
                           </div>
                         </div>
-                        <Badge variant={booking.status === "pending" ? "outline" : "secondary"}>{booking.status}</Badge>
-                      </div>
+                    <Badge variant={booking.status === "pending" ? "outline" : "secondary"}>{booking.status}</Badge>
+                    {canManageBookings && (
+                      <Button size="sm" variant="outline" onClick={() => openEditDialog(booking)}>
+                        Edit
+                      </Button>
+                    )}
+                  </div>
                     ))}
                 </div>
               )}
             </CardContent>
           </Card>
         </TabsContent>
+
+        {isDjUser && (
+          <TabsContent value="mine">
+            <Card className="glass-card border-border/50">
+              <CardHeader>
+                <CardTitle>My Slots</CardTitle>
+                <CardDescription>Your pending and approved bookings for this week.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {bookings.filter((booking) => booking.djId === user?.id).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">You have no bookings this week.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {bookings
+                      .filter((booking) => booking.djId === user?.id)
+                      .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
+                      .map((booking) => (
+                        <div key={booking.id} className="p-4 rounded-xl border border-border/30 flex flex-col gap-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-semibold">{booking.title}</p>
+                            <Badge variant={booking.status === "pending" ? "outline" : "secondary"} className="capitalize">
+                              {booking.status}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {dateFormatter.format(new Date(booking.start))} • {timeFormatter.format(new Date(booking.start))} -{" "}
+                            {timeFormatter.format(new Date(booking.end))}
+                          </p>
+                          {booking.description && (
+                            <p className="text-xs text-muted-foreground/80 truncate">{booking.description}</p>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
+
+      <Dialog open={Boolean(editingBooking)} onOpenChange={(open) => (!open ? setEditingBooking(null) : null)}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Edit Booking</DialogTitle>
+            <DialogDescription>Adjust the show details or remove the slot entirely.</DialogDescription>
+          </DialogHeader>
+          {editingBooking && (
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label htmlFor="editTitle">Show Title</Label>
+                <Input id="editTitle" value={editForm.title} onChange={(e) => setEditForm((prev) => ({ ...prev, title: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editDescription">Description</Label>
+                <Textarea
+                  id="editDescription"
+                  value={editForm.description}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))}
+                  rows={2}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editDate">Date</Label>
+                <Input id="editDate" type="date" value={editForm.date} onChange={(e) => setEditForm((prev) => ({ ...prev, date: e.target.value }))} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="editStart">Start Time</Label>
+                  <Input id="editStart" type="time" value={editForm.startTime} onChange={(e) => setEditForm((prev) => ({ ...prev, startTime: e.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editEnd">End Time</Label>
+                  <Input id="editEnd" type="time" value={editForm.endTime} onChange={(e) => setEditForm((prev) => ({ ...prev, endTime: e.target.value }))} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={editForm.status} onValueChange={(value) => setEditForm((prev) => ({ ...prev, status: value as Booking["status"] }))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="rejected">Rejected</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex justify-between pt-2 gap-3">
+                <Button type="button" variant="destructive" onClick={handleDeleteBooking} disabled={deleteLoading}>
+                  {deleteLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Delete Slot
+                </Button>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" onClick={() => setEditingBooking(null)}>
+                    Cancel
+                  </Button>
+                  <Button type="button" onClick={handleEditBooking} disabled={editLoading || editButtonDisabled}>
+                    {editLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                    Save
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

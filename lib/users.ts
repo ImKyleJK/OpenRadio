@@ -3,6 +3,7 @@ import type { Db, WithId, Filter } from "mongodb"
 import { ObjectId } from "mongodb"
 import { getDb } from "@/lib/mongodb"
 import type { User, UserRole } from "@/lib/auth"
+import { usernameFromDisplayName } from "@/lib/username"
 
 const COLLECTION = "users"
 
@@ -16,17 +17,6 @@ export async function ensureIndexes(db?: Db) {
   await database.collection<UserDoc>(COLLECTION).createIndex({ username: 1 }, { unique: true })
 }
 
-const usernameBase = (displayName: string) => {
-  const sanitized = displayName
-    .toLowerCase()
-    .replace(/[^a-z\s_-]/g, "")
-    .replace(/\s+/g, "_")
-    .replace(/-{2,}/g, "-")
-    .replace(/_{2,}/g, "_")
-    .replace(/^[-_]+|[-_]+$/g, "")
-  return sanitized || "user"
-}
-
 export async function generateUniqueUsername(
   displayName: string,
   db?: Db,
@@ -36,7 +26,7 @@ export async function generateUniqueUsername(
   const collection = database.collection<UserDoc>(COLLECTION)
   const excludeId =
     typeof excludeUserId === "string" ? new ObjectId(excludeUserId) : excludeUserId ?? undefined
-  const base = usernameBase(displayName)
+  const base = usernameFromDisplayName(displayName)
   let candidate = base
   let suffix = 1
 

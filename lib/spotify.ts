@@ -80,3 +80,33 @@ export async function searchSpotifyTrack(query: string, artist?: string): Promis
     return null
   }
 }
+
+export async function searchSpotifyTracks(query: string, limit = 5): Promise<SpotifyTrack[]> {
+  if (!query) return []
+  try {
+    const token = await getSpotifyTokenInternal()
+    const response = await fetch(
+      `https://api.spotify.com/v1/search?type=track&limit=${Math.min(Math.max(limit, 1), 10)}&q=${encodeURIComponent(query)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    )
+    if (!response.ok) {
+      throw new Error("Spotify search failed")
+    }
+    const data = await response.json()
+    return (data?.tracks?.items || []).map((track: any) => ({
+      id: track.id,
+      title: track.name,
+      artist: track.artists?.map((a: { name: string }) => a.name).join(", "),
+      album: track.album?.name,
+      artwork: track.album?.images?.[0]?.url,
+      url: track.external_urls?.spotify,
+    }))
+  } catch (error) {
+    console.error("Spotify search error", error)
+    return []
+  }
+}

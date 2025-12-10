@@ -8,15 +8,14 @@ import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Search, Music, MessageSquare, Loader2 } from "lucide-react"
 import Image from "next/image"
+import { useAuth } from "@/context/auth-context"
 
 interface SpotifyTrack {
   id: string
-  name: string
-  artists: { name: string }[]
-  album: {
-    name: string
-    images: { url: string }[]
-  }
+  title: string
+  artist: string
+  album?: string
+  artwork?: string
 }
 
 interface RequestModalProps {
@@ -25,6 +24,7 @@ interface RequestModalProps {
 }
 
 export function RequestModal({ open, onOpenChange }: RequestModalProps) {
+  const { user } = useAuth()
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<SpotifyTrack[]>([])
   const [isSearching, setIsSearching] = useState(false)
@@ -32,81 +32,133 @@ export function RequestModal({ open, onOpenChange }: RequestModalProps) {
   const [message, setMessage] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [activeTab, setActiveTab] = useState<"search" | "message">("search")
+  const [error, setError] = useState("")
+  const [guestName, setGuestName] = useState("")
+  const [guestEmail, setGuestEmail] = useState("")
 
-  // Mock Spotify search - in production, this would call the Spotify API
   useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults([])
       return
     }
-
+    const controller = new AbortController()
     const timer = setTimeout(async () => {
       setIsSearching(true)
-      // Simulated search results - replace with actual Spotify API call
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      setSearchResults(
-        [
-          {
-            id: "1",
-            name: "Blinding Lights",
-            artists: [{ name: "The Weeknd" }],
-            album: { name: "After Hours", images: [{ url: "/blinding-lights-album.jpg" }] },
-          },
-          {
-            id: "2",
-            name: "Starboy",
-            artists: [{ name: "The Weeknd" }, { name: "Daft Punk" }],
-            album: { name: "Starboy", images: [{ url: "/starboy-album.jpg" }] },
-          },
-          {
-            id: "3",
-            name: "Save Your Tears",
-            artists: [{ name: "The Weeknd" }],
-            album: { name: "After Hours", images: [{ url: "/save-your-tears-album.jpg" }] },
-          },
-          {
-            id: "4",
-            name: "Take On Me",
-            artists: [{ name: "a-ha" }],
-            album: { name: "Hunting High and Low", images: [{ url: "/take-on-me-album.jpg" }] },
-          },
-          {
-            id: "5",
-            name: "Never Gonna Give You Up",
-            artists: [{ name: "Rick Astley" }],
-            album: { name: "Whenever You Need Somebody", images: [{ url: "/rick-astley-album.jpg" }] },
-          },
-        ].filter(
-          (track) =>
-            track.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            track.artists.some((a) => a.name.toLowerCase().includes(searchQuery.toLowerCase())),
-        ),
-      )
-      setIsSearching(false)
-    }, 300)
+      try {
+        const res = await fetch(`/api/spotify/search?mode=list&query=${encodeURIComponent(searchQuery)}`, {
+          signal: controller.signal,
+          cache: "no-store",
+        })
+        const data = await res.json().catch(() => ({}))
+        if (res.ok && Array.isArray(data.results)) {
+          setSearchResults(data.results)
+        } else {
+          setSearchResults([])
+        }
+      } catch (fetchError) {
+        if ((fetchError as Error).name !== "AbortError") {
+          setSearchResults([])
+        }
+      } finally {
+        setIsSearching(false)
+      }
+    }, 400)
 
-    return () => clearTimeout(timer)
+    return () => {
+      controller.abort()
+      clearTimeout(timer)
+    }
   }, [searchQuery])
 
-  const handleSubmit = async () => {
-    setIsSubmitting(true)
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+  const resetState = () => {
+    setSearchQuery("")
+    setSearchResults([])
+    setSelectedTrack(null)
+    setMessage("")
+    setGuestName("")
+    setGuestEmail("")
+    setError("")
+    setSubmitted(false)
+    setActiveTab("search")
     setIsSubmitting(false)
-    setSubmitted(true)
-    setTimeout(() => {
-      onOpenChange(false)
-      setSubmitted(false)
-      setSelectedTrack(null)
-      setMessage("")
-      setSearchQuery("")
-    }, 2000)
   }
+
+  useEffect(() => {
+    if (!open) {
+      resetState()
+    }
+  }, [open])
 
   const handleSelectTrack = (track: SpotifyTrack) => {
     setSelectedTrack(track)
     setSearchQuery("")
     setSearchResults([])
+  }
+
+  const buildPayload = () => {
+    const kind = activeTab === "message" ? "message" : "song"
+    if (kind === "song" && !selectedTrack) return null
+    const payload: Record<string, unknown> = {
+      kind,
+    }
+    if (kind === "song" && selectedTrack) {
+      payload.track = {
+        title: selectedTrack.title,
+        artist: selectedTrack.artist,
+        album: selectedTrack.album,
+        artwork: selectedTrack.artwork,
+        spotifyId: selectedTrack.id,
+      }
+    }
+    if (message.trim()) {
+      payload.message = message.trim()
+    }
+    if (!user) {
+      payload.guestName = guestName.trim()
+      payload.guestEmail = guestEmail.trim()
+    }
+    return payload
+  }
+
+  const canSubmit =
+    (activeTab === "search" && Boolean(selectedTrack)) || (activeTab === "message" && Boolean(message.trim()))
+
+  const handleSubmit = async () => {
+    if (!canSubmit) return
+    const payload = buildPayload()
+    if (!payload) {
+      setError("Select a track to request.")
+      return
+    }
+    if (!user) {
+      if (!guestName.trim() || !guestEmail.trim()) {
+        setError("Please provide your name and email.")
+        return
+      }
+    }
+    setIsSubmitting(true)
+    setError("")
+    try {
+      const res = await fetch("/api/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.error || "Unable to submit request")
+      }
+      setSubmitted(true)
+      setTimeout(() => {
+        onOpenChange(false)
+        resetState()
+      }, 2000)
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Unable to submit request")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   if (submitted) {
@@ -135,7 +187,7 @@ export function RequestModal({ open, onOpenChange }: RequestModalProps) {
           </DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="search" className="mt-4">
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)} className="mt-4">
           <TabsList className="grid w-full grid-cols-2 bg-white/5">
             <TabsTrigger value="search" className="gap-2 data-[state=active]:bg-white/10">
               <Music className="h-4 w-4" />
@@ -148,21 +200,18 @@ export function RequestModal({ open, onOpenChange }: RequestModalProps) {
           </TabsList>
 
           <TabsContent value="search" className="mt-4 space-y-4">
-            {/* Selected track display */}
             {selectedTrack && (
               <div className="flex items-center gap-3 p-3 rounded-lg bg-primary/10 border border-primary/20">
                 <Image
-                  src={selectedTrack.album.images[0]?.url || "/placeholder.svg"}
-                  alt={selectedTrack.album.name}
+                  src={selectedTrack.artwork || "/placeholder.svg"}
+                  alt={selectedTrack.album || selectedTrack.title}
                   width={48}
                   height={48}
-                  className="rounded-md"
+                  className="rounded-md object-cover"
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate">{selectedTrack.name}</p>
-                  <p className="text-sm text-muted-foreground truncate">
-                    {selectedTrack.artists.map((a) => a.name).join(", ")}
-                  </p>
+                  <p className="font-medium truncate">{selectedTrack.title}</p>
+                  <p className="text-sm text-muted-foreground truncate">{selectedTrack.artist}</p>
                 </div>
                 <Button
                   variant="ghost"
@@ -175,7 +224,6 @@ export function RequestModal({ open, onOpenChange }: RequestModalProps) {
               </div>
             )}
 
-            {/* Search input */}
             {!selectedTrack && (
               <>
                 <div className="relative">
@@ -188,7 +236,6 @@ export function RequestModal({ open, onOpenChange }: RequestModalProps) {
                   />
                 </div>
 
-                {/* Search results */}
                 {isSearching && (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -204,17 +251,15 @@ export function RequestModal({ open, onOpenChange }: RequestModalProps) {
                         className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors text-left"
                       >
                         <Image
-                          src={track.album.images[0]?.url || "/placeholder.svg"}
-                          alt={track.album.name}
+                          src={track.artwork || "/placeholder.svg"}
+                          alt={track.album || track.title}
                           width={48}
                           height={48}
-                          className="rounded-md"
+                          className="rounded-md object-cover"
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{track.name}</p>
-                          <p className="text-sm text-muted-foreground truncate">
-                            {track.artists.map((a) => a.name).join(", ")}
-                          </p>
+                          <p className="font-medium truncate">{track.title}</p>
+                          <p className="text-sm text-muted-foreground truncate">{track.artist}</p>
                         </div>
                       </button>
                     ))}
@@ -227,7 +272,6 @@ export function RequestModal({ open, onOpenChange }: RequestModalProps) {
               </>
             )}
 
-            {/* Optional message */}
             <div>
               <label className="text-sm text-muted-foreground mb-2 block">Add a message (optional)</label>
               <Textarea
@@ -238,17 +282,6 @@ export function RequestModal({ open, onOpenChange }: RequestModalProps) {
                 rows={2}
               />
             </div>
-
-            <Button onClick={handleSubmit} disabled={!selectedTrack || isSubmitting} className="w-full">
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Sending...
-                </>
-              ) : (
-                "Send Request"
-              )}
-            </Button>
           </TabsContent>
 
           <TabsContent value="message" className="mt-4 space-y-4">
@@ -262,19 +295,38 @@ export function RequestModal({ open, onOpenChange }: RequestModalProps) {
                 rows={4}
               />
             </div>
-
-            <Button onClick={handleSubmit} disabled={!message.trim() || isSubmitting} className="w-full">
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Sending...
-                </>
-              ) : (
-                "Send Message"
-              )}
-            </Button>
           </TabsContent>
         </Tabs>
+
+        {!user && (
+          <div className="mt-4 space-y-3 bg-white/5 border border-white/10 rounded-lg p-3">
+            <p className="text-xs text-muted-foreground">Share your info so the DJ can shout you out.</p>
+            <Input placeholder="Your name" value={guestName} onChange={(e) => setGuestName(e.target.value)} />
+            <Input
+              placeholder="Email"
+              value={guestEmail}
+              onChange={(e) => setGuestEmail(e.target.value)}
+              type="email"
+            />
+          </div>
+        )}
+
+        {error && <p className="text-sm text-red-400 mt-3">{error}</p>}
+
+        <Button
+          onClick={handleSubmit}
+          disabled={isSubmitting || !canSubmit}
+          className="w-full mt-4"
+        >
+          {isSubmitting ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Sending...
+            </>
+          ) : (
+            "Send"
+          )}
+        </Button>
       </DialogContent>
     </Dialog>
   )

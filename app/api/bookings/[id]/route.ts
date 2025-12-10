@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth.server"
-import { updateBookingStatus, type BookingStatus } from "@/lib/bookings"
+import { updateBookingStatus, type BookingStatus, updateBookingDetails, deleteBooking } from "@/lib/bookings"
 import { hasRole } from "@/lib/auth"
 
 export const runtime = "nodejs"
@@ -26,5 +26,48 @@ export async function PATCH(
   } catch (error) {
     console.error("Failed to update booking", error)
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to update booking" }, { status: 400 })
+  }
+}
+
+export async function PUT(
+  request: Request,
+  { params }: { params: { id: string } },
+) {
+  const session = await getSession()
+  if (!session || !hasRole(session.user, ["admin", "staff"])) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  try {
+    const body = await request.json()
+    const booking = await updateBookingDetails({
+      id: params.id,
+      title: body.title,
+      description: body.description,
+      start: body.start,
+      end: body.end,
+      status: body.status,
+      actedBy: session.user,
+    })
+    return NextResponse.json({ booking })
+  } catch (error) {
+    console.error("Failed to update booking", error)
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to update booking" }, { status: 400 })
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: { id: string } },
+) {
+  const session = await getSession()
+  if (!session || !hasRole(session.user, ["admin", "staff"])) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  try {
+    const booking = await deleteBooking(params.id)
+    return NextResponse.json({ booking })
+  } catch (error) {
+    console.error("Failed to delete booking", error)
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to delete booking" }, { status: 400 })
   }
 }

@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { Users, Search, UserPlus, UploadCloud, Sparkles } from "lucide-react"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Users, Search, UploadCloud, Sparkles, Shield, CheckCircle2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { resolveAvatar } from "@/lib/avatar"
 
@@ -19,6 +20,13 @@ interface UserSummary {
   username?: string
 }
 
+const roleOptions = [
+  { value: "listener", label: "Listener", description: "Basic account with no staff access." },
+  { value: "dj", label: "DJ", description: "Can go live and manage their schedule." },
+  { value: "writer", label: "Article Writer", description: "Can draft and publish news posts." },
+  { value: "staff", label: "Staff", description: "Full staff dashboard access." },
+]
+
 export default function DJsPage() {
   const { toast } = useToast()
   const [query, setQuery] = useState("")
@@ -28,6 +36,8 @@ export default function DJsPage() {
   const [form, setForm] = useState({ displayName: "", avatar: "" })
   const [isSaving, setIsSaving] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const [isPermissionDialogOpen, setIsPermissionDialogOpen] = useState(false)
+  const [isRoleUpdating, setIsRoleUpdating] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const djCount = useMemo(() => results.filter((user) => user.role === "dj").length, [results])
@@ -115,11 +125,36 @@ export default function DJsPage() {
     }
   }
 
+  const handleRoleChange = async (role: string) => {
+    if (!selected) return
+    setIsRoleUpdating(true)
+    try {
+      const res = await fetch("/api/staff/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: selected.id, role }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || "Unable to update permissions")
+      }
+      const updated = data.user as UserSummary
+      setResults((prev) => prev.map((user) => (user.id === updated.id ? { ...user, ...updated } : user)))
+      setSelected((prev) => (prev && prev.id === updated.id ? { ...prev, ...updated } : prev))
+      toast({ title: "Permissions updated", description: `${updated.displayName} is now a ${updated.role}.` })
+      setIsPermissionDialogOpen(false)
+    } catch (error) {
+      toast({ title: "Update failed", description: error instanceof Error ? error.message : undefined, variant: "destructive" })
+    } finally {
+      setIsRoleUpdating(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold tracking-tight">DJ Management</h1>
-        <p className="text-muted-foreground">Promote registered users to DJs, update their profile, and keep avatars on brand.</p>
+        <h1 className="text-3xl font-bold tracking-tight">User Manager</h1>
+        <p className="text-muted-foreground">Search for any registered user, update their profile, and assign permissions.</p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -178,9 +213,9 @@ export default function DJsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5 text-primary" />
-              Promote to DJ
+              Manage User
             </CardTitle>
-            <CardDescription>Select a user to edit their profile and assign DJ permissions.</CardDescription>
+            <CardDescription>Update profile details and adjust their permission level.</CardDescription>
           </CardHeader>
           <CardContent>
             {selected ? (
@@ -226,14 +261,25 @@ export default function DJsPage() {
                   />
                 </div>
 
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Current Permission</label>
+                  <div className="flex items-center gap-3">
+                    <Badge variant="outline" className="uppercase">
+                      {selected.role}
+                    </Badge>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setIsPermissionDialogOpen(true)}>
+                      Set Permission
+                    </Button>
+                  </div>
+                </div>
+
                 <div className="rounded-lg border border-dashed border-border/60 bg-secondary/30 p-4 text-sm text-muted-foreground flex items-start gap-3">
                   <Sparkles className="h-4 w-4 text-primary" />
-                  <p>Saving will update their display name/avatar and assign the DJ role immediately.</p>
+                  <p>Updating saves their profile info. Permissions are changed through the Set Permission dialog.</p>
                 </div>
 
                 <Button onClick={handleSave} disabled={isSaving} className="gap-2">
-                  <UserPlus className="h-4 w-4" />
-                  {isSaving ? "Saving..." : "Save & Set as DJ"}
+                  {isSaving ? "Saving..." : "Save Profile"}
                 </Button>
               </div>
             ) : (
@@ -242,6 +288,41 @@ export default function DJsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={isPermissionDialogOpen} onOpenChange={setIsPermissionDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Set Permission</DialogTitle>
+            <DialogDescription>Choose the access level for {selected?.displayName || "this user"}.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {roleOptions.map((option) => {
+              const isCurrent = selected?.role === option.value
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => handleRoleChange(option.value)}
+                  disabled={isRoleUpdating || isCurrent}
+                  className={`w-full flex items-center justify-between gap-4 rounded-lg border p-3 text-left transition ${
+                    isCurrent ? "border-primary bg-primary/10" : "border-border/40 hover:border-primary/40"
+                  } ${isRoleUpdating ? "opacity-70" : ""}`}
+                >
+                  <div>
+                    <p className="font-medium">{option.label}</p>
+                    <p className="text-sm text-muted-foreground">{option.description}</p>
+                  </div>
+                  {isCurrent ? (
+                    <CheckCircle2 className="h-5 w-5 text-primary" />
+                  ) : (
+                    <Shield className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
