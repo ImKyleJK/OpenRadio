@@ -1,6 +1,7 @@
 import type React from "react"
 import { redirect } from "next/navigation"
-import { getCurrentUser, canAccessStaff } from "@/lib/auth"
+import { getCurrentUser } from "@/lib/auth.server"
+import { canAccessStaff } from "@/lib/auth"
 import { StaffSidebar } from "@/components/staff/staff-sidebar"
 import { StaffHeader } from "@/components/staff/staff-header"
 

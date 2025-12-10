@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
-import { getSession, createToken, type User } from "@/lib/auth"
+import { getSession, createToken } from "@/lib/auth.server"
+import type { User } from "@/lib/auth"
 
 export async function PATCH(request: Request) {
   try {

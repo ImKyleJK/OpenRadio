@@ -4,7 +4,8 @@ const fallback = {
   description: "Streaming live 24/7 with the best music and local shows.",
   logo: "",
   primaryColor: "#22d3ee",
-  streamUrl: "https://stream.example.com/radio",
+  streamUrl: "https://azura.kdnet.co.uk/listen/test/radio.mp3",
+  azuracastApiUrl: "https://azura.kdnet.co.uk/api",
 }
 
 export const stationConfig = {
@@ -14,7 +15,7 @@ export const stationConfig = {
   logo: process.env.NEXT_PUBLIC_STATION_LOGO?.trim() || fallback.logo,
   primaryColor: process.env.NEXT_PUBLIC_PRIMARY_COLOR?.trim() || fallback.primaryColor,
   streamUrl: process.env.NEXT_PUBLIC_STREAM_URL?.trim() || fallback.streamUrl,
-  azuracastApiUrl: process.env.NEXT_PUBLIC_AZURACAST_API_URL?.trim() || "",
+  azuracastApiUrl: process.env.NEXT_PUBLIC_AZURACAST_API_URL?.trim() || fallback.azuracastApiUrl,
 }
 
 export const stationThemeVars: Record<string, string> = {

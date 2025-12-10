@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
-import { createToken, type User } from "@/lib/auth"
+import { createToken } from "@/lib/auth.server"
+import type { User } from "@/lib/auth"
 
 // Mock users - in production this would query MongoDB
 const mockUsers: (User & { password: string })[] = [
