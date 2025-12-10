@@ -116,18 +116,21 @@ export function RadioProvider({ children }: { children: ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
+  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null)
 
   // Stream URL would come from .env in production
   const streamUrl = stationConfig.streamUrl
 
   const initializeAudio = useCallback(() => {
     if (!audioRef.current || audioContextRef.current) return
+    audioRef.current.crossOrigin = "anonymous"
 
     const AudioContextClass =
       window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
     const audioContext = new AudioContextClass()
     const analyser = audioContext.createAnalyser()
-    analyser.fftSize = 256
+    analyser.fftSize = 512
+    analyser.smoothingTimeConstant = 0.75
 
     const source = audioContext.createMediaElementSource(audioRef.current)
     source.connect(analyser)
@@ -135,6 +138,7 @@ export function RadioProvider({ children }: { children: ReactNode }) {
 
     audioContextRef.current = audioContext
     analyserRef.current = analyser
+    sourceNodeRef.current = source
   }, [])
 
   const togglePlay = useCallback(() => {
@@ -144,6 +148,7 @@ export function RadioProvider({ children }: { children: ReactNode }) {
       audioRef.current.pause()
     } else {
       initializeAudio()
+      audioContextRef.current?.resume().catch(console.error)
       audioRef.current.play().catch(console.error)
     }
     setIsPlaying(!isPlaying)
@@ -173,13 +178,88 @@ export function RadioProvider({ children }: { children: ReactNode }) {
     setVisualizerEnabled((prev) => !prev)
   }, [])
 
+  const deriveStationShortcode = useCallback((url: string | undefined) => {
+    if (!url) return null
+    try {
+      const parsed = new URL(url)
+      const parts = parsed.pathname.split("/").filter(Boolean)
+      const listenIndex = parts.findIndex((p) => p === "listen")
+      if (listenIndex >= 0 && parts[listenIndex + 1]) {
+        return parts[listenIndex + 1]
+      }
+      return parts[0] || null
+    } catch {
+      return null
+    }
+  }, [])
+
+  const fetchNowPlaying = useCallback(async () => {
+    if (!stationConfig.azuracastApiUrl) return
+
+    try {
+      const res = await fetch(`${stationConfig.azuracastApiUrl.replace(/\/$/, "")}/nowplaying`, {
+        cache: "no-store",
+      })
+      const data = await res.json()
+      const entries = Array.isArray(data) ? data : [data]
+
+      const shortcode = deriveStationShortcode(streamUrl) || stationConfig.name.toLowerCase().replace(/\s+/g, "-")
+      const match =
+        entries.find((entry: any) => entry?.station?.shortcode === shortcode) ||
+        entries.find((entry: any) => entry?.station?.name?.toLowerCase().includes(shortcode)) ||
+        entries[0]
+
+      if (!match) return
+
+      const nowPlaying = match.now_playing || {}
+      const live = match.live || {}
+      const listenersCount = match.listeners?.current ?? listeners
+      const song = nowPlaying.song || {}
+
+      setIsLive(Boolean(live.is_live))
+      setCurrentTrack({
+        title: song.title || song.text || "Unknown Track",
+        artist: song.artist || "Unknown Artist",
+        album: song.album,
+        artwork: song.art || currentTrack?.artwork,
+        duration: nowPlaying.duration,
+        elapsed: nowPlaying.elapsed,
+      })
+
+      setCurrentShow({
+        name: live.is_live ? live.streamer_name || "Live DJ" : "AutoDJ",
+        dj: live.streamer_name || "AutoDJ",
+        startTime: live.is_live ? "Live now" : "",
+        endTime: live.is_live ? "" : "",
+        description: live.is_live ? "Broadcasting live" : "Automated playlist",
+        artwork: song.art || currentShow?.artwork,
+      })
+
+      if (Array.isArray(match.song_history)) {
+        const recent = match.song_history
+          .slice(0, 5)
+          .map((item: any) => ({
+            title: item.song?.title || item.song?.text || "Unknown Track",
+            artist: item.song?.artist || "Unknown Artist",
+            artwork: item.song?.art,
+            duration: item.duration,
+            elapsed: item.elapsed,
+          }))
+        setRecentTracks(recent)
+      }
+
+      setListeners(listenersCount)
+    } catch (error) {
+      console.error("Failed to load now playing data", error)
+    }
+  }, [currentShow?.artwork, currentTrack?.artwork, deriveStationShortcode, listeners, streamUrl])
+
   // Simulate listener count updates
   useEffect(() => {
-    const interval = setInterval(() => {
-      setListeners((prev) => prev + Math.floor(Math.random() * 5) - 2)
-    }, 30000)
+    fetchNowPlaying()
+    const interval = setInterval(fetchNowPlaying, 20000)
     return () => clearInterval(interval)
-  }, [])
+  }, [fetchNowPlaying])
 
   return (
     <RadioContext.Provider

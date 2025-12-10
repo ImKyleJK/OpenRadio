@@ -24,7 +24,12 @@ export function BackgroundVisualizer() {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
+    const scheduleNext = () => {
+      animationRef.current = requestAnimationFrame(draw)
+    }
+
     if (!visualizerEnabled) {
+      scheduleNext()
       return
     }
 
@@ -33,15 +38,18 @@ export function BackgroundVisualizer() {
     const gap = 2
 
     if (!analyser || !isPlaying) {
-      // Draw static subtle bars when not playing
+      // Draw subtle animated bars when audio is paused or analyser not ready
+      const t = Date.now() / 600
       for (let i = 0; i < barCount; i++) {
-        const height = Math.random() * 30 + 20
+        const wobble = Math.sin(t + i * 0.3) * 10
+        const height = 30 + wobble
         const x = i * barWidth
         const y = canvas.height - height
 
         ctx.fillStyle = "rgba(255, 255, 255, 0.03)"
         ctx.fillRect(x + gap / 2, y, barWidth - gap, height)
       }
+      scheduleNext()
       return
     }
 
@@ -49,10 +57,14 @@ export function BackgroundVisualizer() {
     const dataArray = new Uint8Array(bufferLength)
     analyser.getByteFrequencyData(dataArray)
 
+    const sum = dataArray.reduce((acc, val) => acc + val, 0)
+    const hasAudioData = sum > 0
+
     for (let i = 0; i < barCount; i++) {
       const dataIndex = Math.floor((i * bufferLength) / barCount)
       const value = dataArray[dataIndex]
-      const height = (value / 255) * canvas.height * 0.8 + 20
+      const normalized = value / 255
+      const height = (hasAudioData ? normalized : 0.15 + Math.random() * 0.05) * canvas.height * 0.8 + 20
 
       const x = i * barWidth
       const y = canvas.height - height
@@ -67,7 +79,7 @@ export function BackgroundVisualizer() {
       ctx.fillRect(x + gap / 2, y, barWidth - gap, height)
     }
 
-    animationRef.current = requestAnimationFrame(draw)
+    scheduleNext()
   }, [isPlaying, analyserRef, visualizerEnabled])
 
   useEffect(() => {
