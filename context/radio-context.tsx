@@ -32,9 +32,11 @@ interface ActiveListener {
 
 interface RadioContextType {
   isPlaying: boolean
+  isBuffering: boolean
   volume: number
   isMuted: boolean
   isLive: boolean
+  isLoadingNowPlaying: boolean
   currentTrack: Track | null
   currentShow: Show | null
   recentTracks: Track[]
@@ -59,33 +61,6 @@ export function useRadio() {
   return context
 }
 
-// Mock data - in production this would come from AzuraCast API
-const mockCurrentTrack: Track = {
-  title: "Midnight City",
-  artist: "M83",
-  album: "Hurry Up, We're Dreaming",
-  artwork: "/album-art-synthwave-city-night.jpg",
-  duration: 240,
-  elapsed: 120,
-}
-
-const mockCurrentShow: Show = {
-  name: "Night Vibes",
-  dj: "DJ Luna",
-  startTime: "22:00",
-  endTime: "02:00",
-  description: "Late night electronic and ambient music to help you unwind.",
-  artwork: "/dj-headphones-neon.jpg",
-}
-
-const mockRecentTracks: Track[] = [
-  { title: "Blinding Lights", artist: "The Weeknd", artwork: "/album-cover-retro-sunset.jpg" },
-  { title: "Breathe", artist: "Télépopmusik", artwork: "/album-cover-dreamy-clouds.jpg" },
-  { title: "Digital Love", artist: "Daft Punk", artwork: "/album-cover-robots-electronic.jpg" },
-  { title: "Innerbloom", artist: "RÜFÜS DU SOL", artwork: "/album-cover-desert-bloom.jpg" },
-  { title: "Sunset Lover", artist: "Petit Biscuit", artwork: "/album-cover-ocean-sunset.jpg" },
-]
-
 const mockActiveListeners: ActiveListener[] = [
   { id: "1", username: "MusicLover23", avatar: "/user-avatar-woman-smiling.jpg", listeningFor: 45 },
   { id: "2", username: "NightOwl", avatar: "/user-avatar-man-headphones.jpg", listeningFor: 32 },
@@ -103,12 +78,14 @@ const mockActiveListeners: ActiveListener[] = [
 
 export function RadioProvider({ children }: { children: ReactNode }) {
   const [isPlaying, setIsPlaying] = useState(false)
+  const [isBuffering, setIsBuffering] = useState(false)
   const [volume, setVolumeState] = useState(0.7)
   const [isMuted, setIsMuted] = useState(false)
   const [isLive, setIsLive] = useState(true)
-  const [currentTrack, setCurrentTrack] = useState<Track | null>(mockCurrentTrack)
-  const [currentShow, setCurrentShow] = useState<Show | null>(mockCurrentShow)
-  const [recentTracks, setRecentTracks] = useState<Track[]>(mockRecentTracks)
+  const [isLoadingNowPlaying, setIsLoadingNowPlaying] = useState(true)
+  const [currentTrack, setCurrentTrack] = useState<Track | null>(null)
+  const [currentShow, setCurrentShow] = useState<Show | null>(null)
+  const [recentTracks, setRecentTracks] = useState<Track[]>([])
   const [listeners, setListeners] = useState(127)
   const [activeListeners, setActiveListeners] = useState<ActiveListener[]>(mockActiveListeners) //
   const [visualizerEnabled, setVisualizerEnabled] = useState(true) //
@@ -147,11 +124,22 @@ export function RadioProvider({ children }: { children: ReactNode }) {
     if (isPlaying) {
       audioRef.current.pause()
     } else {
+      setIsBuffering(true)
       initializeAudio()
       audioContextRef.current?.resume().catch(console.error)
-      audioRef.current.play().catch(console.error)
+      audioRef.current
+        .play()
+        .then(() => {
+          setIsPlaying(true)
+        })
+        .catch((error) => {
+          console.error("Playback failed", error)
+          setIsBuffering(false)
+        })
     }
-    setIsPlaying(!isPlaying)
+    if (isPlaying) {
+      setIsPlaying(false)
+    }
   }, [isPlaying, initializeAudio])
 
   const setVolume = useCallback(
@@ -260,6 +248,46 @@ export function RadioProvider({ children }: { children: ReactNode }) {
     const interval = setInterval(fetchNowPlaying, 20000)
     return () => clearInterval(interval)
   }, [fetchNowPlaying])
+
+  useEffect(() => {
+    const audioEl = audioRef.current
+    if (!audioEl) return
+
+    const handlePlaying = () => {
+      setIsBuffering(false)
+      setIsPlaying(true)
+    }
+    const handleWaiting = () => setIsBuffering(true)
+    const handleCanPlay = () => setIsBuffering(false)
+    const handlePause = () => {
+      setIsPlaying(false)
+      setIsBuffering(false)
+    }
+    const handleEnded = () => {
+      setIsPlaying(false)
+      setIsBuffering(false)
+    }
+    const handleError = () => {
+      setIsPlaying(false)
+      setIsBuffering(false)
+    }
+
+    audioEl.addEventListener("playing", handlePlaying)
+    audioEl.addEventListener("waiting", handleWaiting)
+    audioEl.addEventListener("canplay", handleCanPlay)
+    audioEl.addEventListener("pause", handlePause)
+    audioEl.addEventListener("ended", handleEnded)
+    audioEl.addEventListener("error", handleError)
+
+    return () => {
+      audioEl.removeEventListener("playing", handlePlaying)
+      audioEl.removeEventListener("waiting", handleWaiting)
+      audioEl.removeEventListener("canplay", handleCanPlay)
+      audioEl.removeEventListener("pause", handlePause)
+      audioEl.removeEventListener("ended", handleEnded)
+      audioEl.removeEventListener("error", handleError)
+    }
+  }, [])
 
   return (
     <RadioContext.Provider
