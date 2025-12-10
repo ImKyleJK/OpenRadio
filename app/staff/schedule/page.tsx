@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Calendar, Clock, User, CheckCircle, XCircle, Loader2, Plus, ChevronLeft, ChevronRight } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/context/auth-context"
+import { resolveAvatar } from "@/lib/avatar"
 
 interface DJOption {
   id: string
@@ -121,21 +122,52 @@ export default function SchedulePage() {
 
   const pendingBookings = bookings.filter((booking) => booking.status === "pending")
   const approvedBookings = bookings.filter((booking) => booking.status === "approved")
+  const isDjUser = user?.role === "dj"
 
-  const daySummaries = daysOfWeek.map((day, index) => {
-    const dayDate = new Date(weekStart)
-    dayDate.setDate(dayDate.getDate() + index)
-    const dateKey = dayDate.toISOString().split("T")[0]
-    const entries = bookings
-      .filter((booking) => booking.start.startsWith(dateKey))
-      .map((booking) => ({
-        ...booking,
-        startLabel: timeFormatter.format(new Date(booking.start)),
-        endLabel: timeFormatter.format(new Date(booking.end)),
-        isPending: booking.status === "pending",
-      }))
-    return { label: day, date: dayDate, entries }
-  })
+  const weekDays = useMemo(() => {
+    return daysOfWeek.map((label, index) => {
+      const date = new Date(weekStart)
+      date.setDate(date.getDate() + index)
+      date.setHours(0, 0, 0, 0)
+      return { label, date, iso: date.toISOString().split("T")[0] }
+    })
+  }, [weekStart])
+
+  const hours = useMemo(() => Array.from({ length: 18 }, (_, i) => i + 6), [])
+
+  const getBookingForCell = (dayIndex: number, hour: number) => {
+    const slotStart = new Date(weekStart)
+    slotStart.setDate(slotStart.getDate() + dayIndex)
+    slotStart.setHours(hour, 0, 0, 0)
+    const slotEnd = new Date(slotStart)
+    slotEnd.setHours(slotEnd.getHours() + 1)
+
+    return bookings.find((booking) => {
+      const bookingStart = new Date(booking.start)
+      const bookingEnd = new Date(booking.end)
+      return bookingStart < slotEnd && bookingEnd > slotStart
+    })
+  }
+
+  const handleCellClick = (dayIso: string, hour: number) => {
+    const startTime = `${String(hour).padStart(2, "0")}:00`
+    const endHour = hour + 1
+    const endTime = endHour >= 24 ? "23:59" : `${String(endHour).padStart(2, "0")}:00`
+    setForm((prev) => ({
+      ...prev,
+      date: dayIso,
+      startTime,
+      endTime,
+      djId: isDjUser ? user?.id || "" : prev.djId,
+    }))
+    setIsBookingOpen(true)
+  }
+
+  const formatHourLabel = (hour: number) => {
+    const labelDate = new Date()
+    labelDate.setHours(hour, 0, 0, 0)
+    return timeFormatter.format(labelDate)
+  }
 
   const handleBookSlot = async () => {
     const startIso = combineDateTime(form.date, form.startTime)
@@ -193,7 +225,7 @@ export default function SchedulePage() {
     }
   }
 
-  const bookingButtonDisabled = !form.title || !form.date || !form.startTime || !form.endTime || (!form.djId && user?.role !== "dj")
+  const bookingButtonDisabled = !form.title || !form.date || !form.startTime || !form.endTime || (!form.djId && !isDjUser)
 
   return (
     <div className="space-y-6">
@@ -229,27 +261,34 @@ export default function SchedulePage() {
                   rows={2}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="dj">DJ</Label>
-                <Select value={form.djId} onValueChange={(value) => setForm({ ...form, djId: value })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a DJ" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {djs.map((dj) => (
-                      <SelectItem key={dj.id} value={dj.id}>
-                        <div className="flex items-center gap-2">
-                          <Avatar className="h-6 w-6">
-                            <AvatarImage src={dj.avatar || "/placeholder.svg"} />
-                            <AvatarFallback>{dj.name[0]}</AvatarFallback>
-                          </Avatar>
-                          {dj.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {!isDjUser ? (
+                <div className="space-y-2">
+                  <Label htmlFor="dj">DJ</Label>
+                  <Select value={form.djId} onValueChange={(value) => setForm({ ...form, djId: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a DJ" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {djs.map((dj) => (
+                        <SelectItem key={dj.id} value={dj.id}>
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-6 w-6">
+                            <AvatarImage src={resolveAvatar(dj)} />
+                              <AvatarFallback>{dj.name[0]}</AvatarFallback>
+                            </Avatar>
+                            {dj.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div className="space-y-1 rounded-lg border border-border/40 bg-muted/30 p-3 text-sm">
+                  <p className="font-medium">You&apos;re booking this slot</p>
+                  <p className="text-muted-foreground">{user?.displayName || user?.name}</p>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="date">Date</Label>
                 <Input id="date" type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
@@ -367,40 +406,63 @@ export default function SchedulePage() {
                   <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading schedule...
                 </div>
               ) : (
-                <div className="grid md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
-                  {daySummaries.map((day) => (
-                    <div key={day.label} className="p-4 rounded-xl border border-border/40 bg-secondary/30 flex flex-col gap-3">
-                      <div>
-                        <p className="text-sm text-muted-foreground">{day.label}</p>
-                        <p className="font-semibold">{dateFormatter.format(day.date)}</p>
-                      </div>
-                      {day.entries.length ? (
-                        day.entries.map((entry) => (
-                          <div
-                            key={entry.id}
-                            className={`p-3 rounded-lg border ${
-                              entry.isPending ? "bg-muted text-muted-foreground border-dashed" : "bg-background/80"
-                            }`}
-                          >
-                            <div className="flex items-center gap-2">
-                              <Badge variant={entry.isPending ? "outline" : "secondary"}>
-                                {entry.isPending ? "Pending" : "Approved"}
-                              </Badge>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr>
+                        <th className="sticky left-0 z-10 bg-background text-left px-3 py-2 text-muted-foreground font-semibold">Time</th>
+                        {weekDays.map((day) => (
+                          <th key={day.label} className="px-3 py-2 text-left text-muted-foreground font-semibold">
+                            <div className="flex flex-col">
+                              <span>{day.label}</span>
+                              <span className="text-xs text-muted-foreground/80">{dateFormatter.format(day.date)}</span>
                             </div>
-                            <p className="font-semibold mt-1">{entry.title}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {entry.djName}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {entry.startLabel} - {entry.endLabel}
-                            </p>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-sm text-muted-foreground">No shows yet</p>
-                      )}
-                    </div>
-                  ))}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hours.map((hour) => (
+                        <tr key={hour} className="border-t border-border/30">
+                          <td className="sticky left-0 z-10 bg-background px-3 py-2 font-medium text-muted-foreground">{formatHourLabel(hour)}</td>
+                          {weekDays.map((day, index) => {
+                            const booking = getBookingForCell(index, hour)
+                            const isPending = booking?.status === "pending"
+                            return (
+                              <td key={`${day.iso}-${hour}`} className="px-2 py-2 align-top">
+                                {booking ? (
+                                  <div
+                                    className={`rounded-lg border px-3 py-2 ${
+                                      isPending ? "bg-muted/60 border-dashed text-muted-foreground" : "bg-secondary/50 border-border/50"
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between gap-2 text-xs uppercase tracking-wide">
+                                      <span>{isPending ? "Pending" : "Approved"}</span>
+                                      <span>
+                                        {timeFormatter.format(new Date(booking.start))} - {timeFormatter.format(new Date(booking.end))}
+                                      </span>
+                                    </div>
+                                    <p className="font-semibold text-sm mt-1">{booking.title}</p>
+                                    <p className="text-xs text-muted-foreground">{booking.djName}</p>
+                                  </div>
+                                ) : (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="w-full justify-start border border-dashed border-border/40 bg-muted/10 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                                    onClick={() => handleCellClick(day.iso, hour)}
+                                  >
+                                    Request slot
+                                  </Button>
+                                )}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </CardContent>

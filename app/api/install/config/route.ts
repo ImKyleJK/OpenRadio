@@ -10,6 +10,7 @@ const formatEnvValue = (value: string) => `"${value.replace(/"/g, '\\"').replace
 export async function POST(request: Request) {
   try {
     const body = await request.json()
+    const markComplete = Boolean(body?.markComplete)
 
     const envEntries = new Map<string, string>()
     const setIfString = (key: string, value: unknown) => {
@@ -29,6 +30,9 @@ export async function POST(request: Request) {
     setIfString("JWT_SECRET", body.jwtSecret)
     setIfString("SPOTIFY_CLIENT_ID", body.spotifyClientId)
     setIfString("SPOTIFY_CLIENT_SECRET", body.spotifyClientSecret)
+    if (markComplete) {
+      envEntries.set("SETUP_COMPLETED", "true")
+    }
 
     const envPath = path.join(process.cwd(), ".env.local")
     let existingLines: string[] = []

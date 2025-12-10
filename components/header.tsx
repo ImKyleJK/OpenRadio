@@ -29,6 +29,7 @@ import {
 } from "lucide-react"
 import { canAccessStaff } from "@/lib/auth"
 import { stationConfig } from "@/lib/station-config"
+import { resolveAvatar } from "@/lib/avatar"
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -48,6 +49,8 @@ export function Header() {
     await logout()
     window.location.href = "/"
   }
+
+  const avatarUrl = user ? resolveAvatar(user) : null
 
   return (
     <header
@@ -108,7 +111,7 @@ export function Header() {
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" className="relative h-9 w-9 rounded-full">
                     <Avatar className="h-9 w-9">
-                      <AvatarImage src={user.avatar || "/placeholder.svg"} alt={user.displayName} />
+                      <AvatarImage src={avatarUrl || "/placeholder.svg"} alt={user.displayName} />
                       <AvatarFallback>{user.displayName.charAt(0).toUpperCase()}</AvatarFallback>
                     </Avatar>
                   </Button>
@@ -116,7 +119,7 @@ export function Header() {
                 <DropdownMenuContent align="end" className="w-56">
                   <div className="flex items-center gap-2 p-2">
                     <Avatar className="h-8 w-8">
-                      <AvatarImage src={user.avatar || "/placeholder.svg"} alt={user.displayName} />
+                      <AvatarImage src={avatarUrl || "/placeholder.svg"} alt={user.displayName} />
                       <AvatarFallback>{user.displayName.charAt(0).toUpperCase()}</AvatarFallback>
                     </Avatar>
                     <div className="flex flex-col">
@@ -223,7 +226,7 @@ export function Header() {
                   <div className="border-t border-border/50 pt-3 mt-1">
                     <div className="flex items-center gap-3 px-3 py-2">
                       <Avatar className="h-8 w-8">
-                        <AvatarImage src={user.avatar || "/placeholder.svg"} alt={user.displayName} />
+                        <AvatarImage src={avatarUrl || "/placeholder.svg"} alt={user.displayName} />
                         <AvatarFallback>{user.displayName.charAt(0).toUpperCase()}</AvatarFallback>
                       </Avatar>
                       <div>

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { findUserByUsername } from "@/lib/users"
 import { Calendar, Instagram, Link2, Twitter } from "lucide-react"
 import Link from "next/link"
+import { resolveAvatar } from "@/lib/avatar"
 
 function formatRole(role: string) {
   return role.charAt(0).toUpperCase() + role.slice(1)
@@ -71,7 +72,7 @@ export default async function UserProfilePage({ params }: { params: { username: 
                 <div className="flex flex-col md:flex-row gap-6 items-center md:items-start">
                   <div className="relative">
                     <Avatar className="h-32 w-32 md:h-40 md:w-40 border-4 border-background">
-                      <AvatarImage src={user.avatar || "/placeholder.svg"} alt={user.displayName} />
+                      <AvatarImage src={avatarUrl} alt={user.displayName} />
                       <AvatarFallback className="text-4xl">
                         {user.displayName?.[0]?.toUpperCase() || user.username[0].toUpperCase()}
                       </AvatarFallback>
@@ -147,3 +148,4 @@ export default async function UserProfilePage({ params }: { params: { username: 
     </div>
   )
 }
+  const avatarUrl = resolveAvatar(user, 512)

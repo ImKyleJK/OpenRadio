@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Users, Search, UserCog, Shield, Ban, CheckCircle } from "lucide-react"
+import { resolveAvatar } from "@/lib/avatar"
 import type { UserRole } from "@/lib/auth"
 
 interface UserData {
@@ -199,20 +200,22 @@ export default function UsersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredUsers.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-8 w-8">
-                        <AvatarImage src={user.avatar || "/placeholder.svg"} alt={user.displayName} />
-                        <AvatarFallback>{user.displayName.charAt(0).toUpperCase()}</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="font-medium">{user.displayName}</p>
-                        <p className="text-xs text-muted-foreground sm:hidden">{user.email}</p>
+              {filteredUsers.map((user) => {
+                const avatarUrl = resolveAvatar(user)
+                return (
+                  <TableRow key={user.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-8 w-8">
+                          <AvatarImage src={avatarUrl} alt={user.displayName} />
+                          <AvatarFallback>{user.displayName.charAt(0).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-medium">{user.displayName}</p>
+                          <p className="text-xs text-muted-foreground sm:hidden">{user.email}</p>
+                        </div>
                       </div>
-                    </div>
-                  </TableCell>
+                    </TableCell>
                   <TableCell className="hidden sm:table-cell text-muted-foreground">{user.email}</TableCell>
                   <TableCell>
                     <Badge className={roleColors[user.role]}>{user.role}</Badge>
@@ -281,7 +284,8 @@ export default function UsersPage() {
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
+              )
+            })}
             </TableBody>
           </Table>
           {filteredUsers.length === 0 && <div className="text-center py-8 text-muted-foreground">No users found</div>}

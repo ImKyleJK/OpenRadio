@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { User, Settings, Shield, Save, CheckCircle2, Loader2 } from "lucide-react"
+import { resolveAvatar } from "@/lib/avatar"
 
 export default function ProfilePage() {
   const router = useRouter()
@@ -91,6 +92,8 @@ export default function ProfilePage() {
 
   if (!user) return null
 
+  const avatarUrl = resolveAvatar(user, 256)
+
   const roleColors: Record<string, string> = {
     admin: "bg-red-500/20 text-red-400 border-red-500/30",
     staff: "bg-purple-500/20 text-purple-400 border-purple-500/30",
@@ -108,7 +111,7 @@ export default function ProfilePage() {
           <div className="glass-card rounded-2xl p-6 md:p-8 mb-8">
             <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
               <Avatar className="h-24 w-24 md:h-32 md:w-32 border-4 border-primary/20">
-                <AvatarImage src={user.avatar || "/placeholder.svg"} alt={user.displayName} />
+                <AvatarImage src={avatarUrl} alt={user.displayName} />
                 <AvatarFallback className="text-2xl">{user.displayName.charAt(0).toUpperCase()}</AvatarFallback>
               </Avatar>
               <div className="flex-1 text-center md:text-left">

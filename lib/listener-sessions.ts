@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb"
 import { getDb } from "@/lib/mongodb"
 import type { User } from "@/lib/auth"
+import { resolveAvatar } from "@/lib/avatar"
 
 interface ListenerSessionDoc {
   _id: ObjectId
@@ -27,7 +28,7 @@ export async function recordListenerStart(user: User) {
       $set: {
         userId: user.id,
         displayName: user.displayName,
-        avatar: user.avatar,
+        avatar: resolveAvatar(user),
         lastSeenAt: nowIso,
         endedAt: null,
         startedAt: existing?.endedAt ? nowIso : existing?.startedAt ?? nowIso,

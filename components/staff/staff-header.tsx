@@ -30,6 +30,7 @@ import {
 } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { resolveAvatar } from "@/lib/avatar"
 
 interface StaffHeaderProps {
   user: User
@@ -38,6 +39,7 @@ interface StaffHeaderProps {
 export function StaffHeader({ user }: StaffHeaderProps) {
   const [isOpen, setIsOpen] = useState(false)
   const pathname = usePathname()
+  const avatarUrl = resolveAvatar(user)
 
   const navItems = [
     { title: "Dashboard", href: "/staff", icon: LayoutDashboard, show: true },
@@ -105,7 +107,7 @@ export function StaffHeader({ user }: StaffHeaderProps) {
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" className="gap-2">
             <Avatar className="h-8 w-8">
-              <AvatarImage src={user.avatar || "/placeholder.svg"} alt={user.displayName} />
+              <AvatarImage src={avatarUrl} alt={user.displayName} />
               <AvatarFallback>{user.displayName.charAt(0).toUpperCase()}</AvatarFallback>
             </Avatar>
             <span className="hidden sm:inline">{user.displayName}</span>

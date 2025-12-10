@@ -19,9 +19,11 @@ export async function ensureIndexes(db?: Db) {
 const usernameBase = (displayName: string) => {
   const sanitized = displayName
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, "")
-    .trim()
+    .replace(/[^a-z\s_-]/g, "")
     .replace(/\s+/g, "_")
+    .replace(/-{2,}/g, "-")
+    .replace(/_{2,}/g, "_")
+    .replace(/^[-_]+|[-_]+$/g, "")
   return sanitized || "user"
 }
 
