@@ -191,6 +191,39 @@ export function RadioProvider({ children }: { children: ReactNode }) {
     }
   }, [recentTracks.length])
 
+  const lastEnrichedKeyRef = useRef<string | null>(null)
+  const nextRetryRef = useRef<number>(0)
+
+  const enrichWithSpotify = useCallback(async (title?: string, artist?: string) => {
+    if (!title) return
+    const key = `${title}|${artist || ""}`
+    const now = Date.now()
+    if (lastEnrichedKeyRef.current === key && now < nextRetryRef.current) {
+      return
+    }
+    lastEnrichedKeyRef.current = key
+    nextRetryRef.current = now + 5000
+
+    try {
+      const res = await fetch(
+        `/api/spotify/search?query=${encodeURIComponent(title)}${artist ? `&artist=${encodeURIComponent(artist)}` : ""}`,
+      )
+      if (!res.ok) return
+      const data = await res.json()
+      if (!data?.found) return
+      setCurrentTrack((prev) => ({
+        ...(prev || {}),
+        title: data.title || prev?.title || title,
+        artist: data.artist || prev?.artist || artist || "Unknown Artist",
+        artwork: data.albumArt || prev?.artwork,
+      }))
+      // Successful enrichment; avoid retrying until song changes
+      nextRetryRef.current = Number.POSITIVE_INFINITY
+    } catch (error) {
+      console.error("Spotify enrichment failed", error)
+    }
+  }, [])
+
   const deriveStationShortcode = useCallback((url: string | undefined) => {
     if (!url) return null
     try {
@@ -275,6 +308,11 @@ export function RadioProvider({ children }: { children: ReactNode }) {
 
       setListeners(listenersCount)
       setHasLoadedNowPlaying(true)
+      const key = `${song.title || song.text || ""}|${song.artist || ""}`
+      if (key !== lastEnrichedKeyRef.current) {
+        nextRetryRef.current = 0
+      }
+      void enrichWithSpotify(song.title || song.text, song.artist)
     } catch (error) {
       console.error("Failed to load now playing data", error)
       setFallbackNowPlaying()
@@ -282,7 +320,16 @@ export function RadioProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoadingNowPlaying(false)
     }
-  }, [currentShow, currentTrack, deriveStationShortcode, hasLoadedNowPlaying, listeners, setFallbackNowPlaying, streamUrl])
+  }, [
+    currentShow,
+    currentTrack,
+    deriveStationShortcode,
+    enrichWithSpotify,
+    hasLoadedNowPlaying,
+    listeners,
+    setFallbackNowPlaying,
+    streamUrl,
+  ])
 
   // Simulate listener count updates
   useEffect(() => {

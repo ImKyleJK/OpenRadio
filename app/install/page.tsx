@@ -836,6 +836,8 @@ export default function InstallPage() {
                     <div>NEXT_PUBLIC_AZURACAST_API_URL={streamData.azuracastUrl}</div>
                     <div>MONGODB_URI={dbUri}</div>
                     <div>JWT_SECRET={jwtSecret || "[auto-generated]"}</div>
+                    <div>SPOTIFY_CLIENT_ID={spotifyData.clientId}</div>
+                    <div>SPOTIFY_CLIENT_SECRET={[...spotifyData.clientSecret].map(() => "*").join("") || "[set]"}</div>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
                     Restart the dev server to see your station name, logo, and colors reflected everywhere.

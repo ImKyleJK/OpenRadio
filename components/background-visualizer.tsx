@@ -34,7 +34,7 @@ export function BackgroundVisualizer() {
       return
     }
 
-    const barCount = 28
+    const barCount = visualizerMode === "bars" ? 8 : 24
     const barWidth = canvas.width / barCount
     const gap = 2
 
@@ -57,43 +57,47 @@ export function BackgroundVisualizer() {
     }
 
     const bufferLength = analyser!.frequencyBinCount
-    const dataArray = new Uint8Array(bufferLength)
-    analyser!.getByteFrequencyData(dataArray)
+    const freqArray = new Uint8Array(bufferLength)
+    analyser!.getByteFrequencyData(freqArray)
+    const timeArray = new Uint8Array(bufferLength)
+    analyser!.getByteTimeDomainData(timeArray)
 
-    const sum = dataArray.reduce((acc, val) => acc + val, 0)
-    const hasAudioData = sum > 1
+    const freqSum = freqArray.reduce((acc, val) => acc + val, 0)
+    const freqRms = Math.sqrt(freqArray.reduce((acc, v) => acc + v * v, 0) / Math.max(1, freqArray.length))
+    const timeVariance =
+      timeArray.reduce((acc, v) => acc + Math.pow(v - 128, 2), 0) / Math.max(1, timeArray.length)
+
+    const hasAudioData = freqSum > 0 && (freqRms > 0.05 || timeVariance > 1.5)
     if (smoothValuesRef.current.length !== barCount) {
       smoothValuesRef.current = new Array(barCount).fill(0)
     }
 
     const rawLevels: number[] = []
+    const t = Date.now() / 600
     for (let i = 0; i < barCount; i++) {
       const norm = i / barCount
-      const logIndex = Math.pow(norm, 1.4) * (bufferLength - 1)
+      const logIndex = Math.pow(norm, 1.2) * (bufferLength - 1)
       const dataIndex = Math.max(0, Math.min(bufferLength - 1, Math.floor(logIndex)))
-      const rawValue = dataArray[dataIndex]
+      const rawValue = freqArray[dataIndex]
 
-      const noiseFloor = 4
-      const boosted =
-        rawValue > noiseFloor
-          ? (rawValue - noiseFloor) / (255 - noiseFloor)
-          : hasAudioData
-            ? 0
-            : 0.08 + Math.random() * 0.04
+      const noiseFloor = 2
+      const boosted = hasAudioData
+        ? Math.max(0, rawValue - noiseFloor) / (255 - noiseFloor)
+        : 0.04 + 0.02 * Math.sin(t + i * 0.4)
 
       const emphasis =
         visualizerMode === "wave"
           ? norm < 0.35
-            ? 1.4
+            ? 1.3
             : norm > 0.65
-              ? 1.2
+              ? 1.15
               : 1.05
           : norm < 0.35
-            ? 1.65
+            ? 1.55
             : norm > 0.65
-              ? 1.4
-              : 1.15
-      const target = Math.max(0.06, Math.min(1, Math.pow(boosted * emphasis, 0.9)))
+              ? 1.3
+              : 1.1
+      const target = Math.max(0.04, Math.min(1, Math.pow(boosted * emphasis, 0.85)))
       rawLevels.push(target)
     }
 
@@ -103,14 +107,14 @@ export function BackgroundVisualizer() {
       const next = rawLevels[idx + 1] ?? level
       const prev2 = rawLevels[idx - 2] ?? prev
       const next2 = rawLevels[idx + 2] ?? next
-      return level * 0.45 + prev * 0.2 + next * 0.2 + prev2 * 0.075 + next2 * 0.075
+      return level * 0.5 + prev * 0.2 + next * 0.2 + prev2 * 0.05 + next2 * 0.05
     })
 
     const timeSmoothed: number[] = []
     for (let i = 0; i < barCount; i++) {
       const target = spatiallySmoothed[i]
       const prev = smoothValuesRef.current[i] || 0
-      const smoothingFactor = target > prev ? 0.4 : 0.82 // smoother overall envelope
+      const smoothingFactor = target > prev ? 0.25 : 0.9 // more responsive, slower decay
       const smoothed = prev * smoothingFactor + target * (1 - smoothingFactor)
       smoothValuesRef.current[i] = smoothed
       timeSmoothed.push(smoothed)
@@ -120,7 +124,7 @@ export function BackgroundVisualizer() {
     for (let i = 0; i < barCount; i++) {
       const smoothed = timeSmoothed[i]
       const height =
-        smoothed * canvas.height * (visualizerMode === "wave" ? 1.0 : 1.15) + canvas.height * 0.03
+        smoothed * canvas.height * (visualizerMode === "wave" ? 1.05 : 1.2) + canvas.height * 0.02
       const x = i * barWidth
       const y = canvas.height - height
       points.push({ x: x + barWidth / 2, y, height, barX: x })
@@ -159,14 +163,14 @@ export function BackgroundVisualizer() {
       points.forEach((p, idx) => {
         const shift = (idx / barCount + t) % 1
         const hue = 20 + shift * 40 // cycle orange/yellow over time
-        const top = `hsla(${hue}, 85%, 60%, 0.9)`
-        const bottom = `hsla(${hue}, 85%, 60%, 0.2)`
+        const top = `hsla(${hue}, 85%, 60%, 0.6)`
+        const bottom = `hsla(${hue}, 85%, 60%, 0.1)`
         const gradient = ctx.createLinearGradient(p.barX, p.y, p.barX, canvas.height)
         gradient.addColorStop(0, top)
         gradient.addColorStop(1, bottom)
         ctx.fillStyle = gradient
         ctx.beginPath()
-        ctx.roundRect(p.barX, p.y, barWidth, p.height, 3)
+        ctx.roundRect(p.barX, p.y, barWidth, p.height, 4)
         ctx.fill()
       })
     }
