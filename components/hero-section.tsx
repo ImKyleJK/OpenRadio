@@ -12,6 +12,7 @@ import { BackgroundVisualizer } from "@/components/background-visualizer"
 export function HeroSection() {
   const {
     isPlaying,
+    isBuffering,
     togglePlay,
     volume,
     setVolume,
@@ -21,6 +22,8 @@ export function HeroSection() {
     currentTrack,
     isLive,
     listeners,
+    isLoadingNowPlaying,
+    hasLoadedNowPlaying,
     visualizerEnabled,
     toggleVisualizer,
   } = useRadio()
@@ -28,10 +31,12 @@ export function HeroSection() {
   const [requestModalOpen, setRequestModalOpen] = useState(false)
 
   const backgroundImage = currentTrack?.artwork || currentShow?.artwork || "/abstract-music-waves.png"
+  const djArtwork = hasLoadedNowPlaying ? currentShow?.artwork : undefined
+  const trackArtwork = hasLoadedNowPlaying ? currentTrack?.artwork : undefined
 
   return (
     <>
-      <section className="relative h-screen w-full flex flex-col overflow-hidden">
+      <section className="relative min-h-[75vh] w-full flex flex-col overflow-hidden">
         {/* Blurred background image */}
         <div className="absolute inset-0 z-0">
           <Image
@@ -64,14 +69,20 @@ export function HeroSection() {
               </div>
 
               <div className="relative mb-6">
-                <div className="w-32 h-32 md:w-40 md:h-40 rounded-full overflow-hidden ring-4 ring-primary/30 shadow-2xl shadow-primary/20 aspect-square">
-                  <Image
-                    src={currentShow?.artwork || "/placeholder.svg?height=160&width=160&query=dj profile photo"}
-                    alt={currentShow?.dj || "DJ"}
-                    width={160}
-                    height={160}
-                    className="object-cover w-full h-full"
-                  />
+                <div
+                  className={`w-28 h-28 md:w-32 md:h-32 rounded-full overflow-hidden ring-3 ring-primary/30 shadow-2xl shadow-primary/20 aspect-square ${
+                    isLoadingNowPlaying && !hasLoadedNowPlaying ? "bg-secondary/50 animate-pulse" : ""
+                  }`}
+                >
+                  {djArtwork ? (
+                    <Image
+                      src={djArtwork}
+                      alt={currentShow?.dj || "DJ"}
+                      width={160}
+                      height={160}
+                      className="object-cover w-full h-full"
+                    />
+                  ) : null}
                 </div>
                 {/* Online indicator */}
                 {isLive && (
@@ -80,8 +91,20 @@ export function HeroSection() {
               </div>
 
               {/* DJ Name & Show */}
-              <h2 className="text-2xl md:text-3xl font-bold mb-1">{currentShow?.dj || "AutoDJ"}</h2>
-              <p className="text-lg text-primary font-medium mb-4">{currentShow?.name || "Non-Stop Music"}</p>
+              <h2 className="text-xl md:text-2xl font-bold mb-1">
+                {isLoadingNowPlaying && !hasLoadedNowPlaying ? (
+                  <span className="inline-block w-36 h-6 bg-secondary/60 rounded animate-pulse" />
+                ) : (
+                  currentShow?.dj || "AutoDJ"
+                )}
+              </h2>
+              <p className="text-base md:text-lg text-primary font-medium mb-4">
+                {isLoadingNowPlaying && !hasLoadedNowPlaying ? (
+                  <span className="inline-block w-48 h-5 bg-secondary/50 rounded animate-pulse" />
+                ) : (
+                  currentShow?.name || "Non-Stop Music"
+                )}
+              </p>
 
               {/* DJ Stats */}
               <div className="flex items-center gap-6 text-sm text-muted-foreground">
@@ -110,14 +133,20 @@ export function HeroSection() {
             <div className="flex flex-col items-center md:items-end text-center md:text-right order-1 md:order-2">
               {/* Album Art */}
               <div className="relative mb-6">
-                <div className="w-56 h-56 md:w-72 md:h-72 lg:w-80 lg:h-80 rounded-2xl overflow-hidden shadow-2xl shadow-black/50 ring-1 ring-white/10">
-                  <Image
-                    src={currentTrack?.artwork || "/placeholder.svg?height=320&width=320&query=album cover synthwave"}
-                    alt={currentTrack?.title || "Now Playing"}
-                    fill
-                    className="object-cover"
-                    priority
-                  />
+                <div
+                  className={`w-48 h-48 md:w-64 md:h-64 lg:w-72 lg:h-72 rounded-2xl overflow-hidden shadow-2xl shadow-black/50 ring-1 ring-white/10 ${
+                    isLoadingNowPlaying && !hasLoadedNowPlaying ? "bg-secondary/50 animate-pulse" : ""
+                  }`}
+                >
+                  {trackArtwork ? (
+                    <Image
+                      src={trackArtwork}
+                      alt={currentTrack?.title || "Now Playing"}
+                      fill
+                      className="object-cover"
+                      priority
+                    />
+                  ) : null}
                 </div>
                 {/* Vinyl effect overlay */}
                 <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-white/5 to-transparent pointer-events-none" />
@@ -126,10 +155,20 @@ export function HeroSection() {
               {/* Track Info */}
               <div className="max-w-xs md:max-w-sm">
                 <p className="text-sm text-muted-foreground uppercase tracking-wider mb-2">Now Playing</p>
-                <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold mb-2 text-balance leading-tight">
-                  {currentTrack?.title || "Unknown Track"}
+                <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-2 text-balance leading-tight">
+                  {isLoadingNowPlaying && !hasLoadedNowPlaying ? (
+                    <span className="inline-block h-7 w-48 bg-secondary/60 rounded animate-pulse" />
+                  ) : (
+                    currentTrack?.title || "Unknown Track"
+                  )}
                 </h1>
-                <p className="text-lg md:text-xl text-muted-foreground">{currentTrack?.artist || "Unknown Artist"}</p>
+                <p className="text-sm md:text-base text-muted-foreground">
+                  {isLoadingNowPlaying && !hasLoadedNowPlaying ? (
+                    <span className="inline-block h-5 w-32 bg-secondary/50 rounded animate-pulse" />
+                  ) : (
+                    currentTrack?.artist || "Unknown Artist"
+                  )}
+                </p>
               </div>
             </div>
           </div>
@@ -140,18 +179,28 @@ export function HeroSection() {
             <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
               {/* Left - Mini track info */}
               <div className="hidden sm:flex items-center gap-3 flex-1 min-w-0">
-                <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0">
-                  <Image
-                    src={currentTrack?.artwork || "/placeholder.svg?height=40&width=40"}
-                    alt=""
-                    width={40}
-                    height={40}
-                    className="object-cover"
-                  />
+                <div
+                  className={`w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 ${
+                    isLoadingNowPlaying && !hasLoadedNowPlaying ? "bg-secondary/50 animate-pulse" : ""
+                  }`}
+                >
+                  {trackArtwork ? (
+                    <Image
+                      src={trackArtwork}
+                      alt=""
+                      width={40}
+                      height={40}
+                      className="object-cover"
+                    />
+                  ) : null}
                 </div>
                 <div className="min-w-0">
-                  <p className="font-medium truncate text-sm">{currentTrack?.title || "Unknown Track"}</p>
-                  <p className="text-xs text-muted-foreground truncate">{currentTrack?.artist || "Unknown Artist"}</p>
+                  <p className="font-medium truncate text-sm">
+                    {isLoadingNowPlaying ? <span className="inline-block h-4 w-28 bg-secondary/50 rounded animate-pulse" /> : currentTrack?.title || "Unknown Track"}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {isLoadingNowPlaying ? <span className="inline-block h-3 w-20 bg-secondary/40 rounded animate-pulse" /> : currentTrack?.artist || "Unknown Artist"}
+                  </p>
                 </div>
               </div>
 
@@ -162,7 +211,11 @@ export function HeroSection() {
                   variant="ghost"
                   size="icon"
                   onClick={toggleVisualizer}
-                  className={`h-9 w-9 ${visualizerEnabled ? "text-primary" : "text-muted-foreground"} hover:text-foreground`}
+                  className={`h-9 w-9 transition-shadow ${
+                    visualizerEnabled
+                      ? "text-primary shadow-[0_0_16px_rgba(34,211,238,0.5)] ring-1 ring-primary/40"
+                      : "text-muted-foreground"
+                  } hover:text-foreground`}
                   aria-label={visualizerEnabled ? "Disable visualizer" : "Enable visualizer"}
                 >
                   <BarChart3 className="h-5 w-5" />
@@ -180,11 +233,20 @@ export function HeroSection() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={togglePlay}
-                  className="h-10 w-10 text-foreground hover:text-primary hover:bg-primary/10"
+                  onClick={() => {
+                    if (!isBuffering) togglePlay()
+                  }}
+                  disabled={isBuffering}
+                  className="h-10 w-10 text-foreground hover:text-primary hover:bg-primary/10 disabled:opacity-60"
                   aria-label={isPlaying ? "Pause" : "Play"}
                 >
-                  {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6 ml-0.5" />}
+                  {isBuffering ? (
+                    <div className="h-5 w-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  ) : isPlaying ? (
+                    <Pause className="h-6 w-6" />
+                  ) : (
+                    <Play className="h-6 w-6 ml-0.5" />
+                  )}
                 </Button>
 
                 <Button

@@ -6,7 +6,8 @@ import { Clock, Users } from "lucide-react"
 import Image from "next/image"
 
 export function NowPlayingSection() {
-  const { recentTracks, activeListeners, listeners } = useRadio()
+  const { recentTracks, activeListeners, listeners, isLoadingNowPlaying, hasLoadedNowPlaying } = useRadio()
+  const shouldShowSkeletons = isLoadingNowPlaying && !hasLoadedNowPlaying && recentTracks.length === 0
 
   return (
     <section className="py-16 md:py-24">
@@ -81,7 +82,7 @@ export function NowPlayingSection() {
             </CardContent>
           </Card>
 
-          {/* Recently Played - unchanged */}
+          {/* Recently Played */}
           <Card className="glass-card border-border/50">
             <CardHeader className="pb-4">
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -91,27 +92,42 @@ export function NowPlayingSection() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {recentTracks.map((track, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-secondary/50 transition-colors"
-                  >
-                    <Image
-                      src={track.artwork || "/placeholder.svg?height=48&width=48&query=album cover"}
-                      alt={track.title}
-                      width={48}
-                      height={48}
-                      className="rounded-lg shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{track.title}</p>
-                      <p className="text-sm text-muted-foreground truncate">{track.artist}</p>
-                    </div>
-                    <span className="text-xs text-muted-foreground shrink-0">
-                      {index === 0 ? "Just now" : `${(index + 1) * 3}m ago`}
-                    </span>
-                  </div>
-                ))}
+                {shouldShowSkeletons
+                  ? Array.from({ length: 4 }).map((_, idx) => (
+                      <div key={idx} className="flex items-center gap-3 p-2 rounded-lg">
+                        <div className="w-12 h-12 rounded-lg bg-secondary/60 animate-pulse" />
+                        <div className="flex-1 min-w-0 space-y-2">
+                          <div className="h-3.5 bg-secondary/50 rounded w-32 animate-pulse" />
+                          <div className="h-3 bg-secondary/40 rounded w-24 animate-pulse" />
+                        </div>
+                        <div className="h-3 w-12 bg-secondary/40 rounded animate-pulse" />
+                      </div>
+                    ))
+                  : recentTracks.map((track, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-secondary/50 transition-colors"
+                    >
+                        {track.artwork ? (
+                          <Image
+                            src={track.artwork}
+                            alt={track.title}
+                            width={48}
+                            height={48}
+                            className="rounded-lg shrink-0"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-lg bg-secondary/50" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{track.title}</p>
+                          <p className="text-sm text-muted-foreground truncate">{track.artist}</p>
+                        </div>
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {index === 0 ? "Just now" : `${(index + 1) * 3}m ago`}
+                        </span>
+                      </div>
+                    ))}
               </div>
             </CardContent>
           </Card>

@@ -13,7 +13,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Radio, Menu, X, User, LogIn, LogOut, Settings, LayoutDashboard } from "lucide-react"
+import {
+  Radio,
+  Menu,
+  X,
+  User,
+  LogIn,
+  LogOut,
+  Settings,
+  LayoutDashboard,
+  Home,
+  CalendarDays,
+  Newspaper,
+  Info,
+} from "lucide-react"
 import { canAccessStaff } from "@/lib/auth"
 import { stationConfig } from "@/lib/station-config"
 
@@ -67,19 +80,23 @@ export function Header() {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-6">
-            <Link href="/" className="text-sm font-medium text-foreground/80 hover:text-primary transition-colors">
+            <Link href="/" className="flex items-center gap-2 text-sm font-medium text-foreground/80 hover:text-primary transition-colors">
+              <Home className="h-4 w-4" />
               Home
             </Link>
             <Link
               href="/schedule"
-              className="text-sm font-medium text-foreground/80 hover:text-primary transition-colors"
+              className="flex items-center gap-2 text-sm font-medium text-foreground/80 hover:text-primary transition-colors"
             >
+              <CalendarDays className="h-4 w-4" />
               Schedule
             </Link>
-            <Link href="/news" className="text-sm font-medium text-foreground/80 hover:text-primary transition-colors">
+            <Link href="/news" className="flex items-center gap-2 text-sm font-medium text-foreground/80 hover:text-primary transition-colors">
+              <Newspaper className="h-4 w-4" />
               News
             </Link>
-            <Link href="/about" className="text-sm font-medium text-foreground/80 hover:text-primary transition-colors">
+            <Link href="/about" className="flex items-center gap-2 text-sm font-medium text-foreground/80 hover:text-primary transition-colors">
+              <Info className="h-4 w-4" />
               About
             </Link>
           </nav>
@@ -171,30 +188,34 @@ export function Header() {
             <div className="flex flex-col gap-3">
               <Link
                 href="/"
-                className="px-3 py-2 text-sm font-medium text-foreground/80 hover:text-primary hover:bg-secondary/50 rounded-lg transition-colors"
+                className="px-3 py-2 text-sm font-medium text-foreground/80 hover:text-primary hover:bg-secondary/50 rounded-lg transition-colors flex items-center gap-2"
                 onClick={() => setIsMenuOpen(false)}
               >
+                <Home className="h-4 w-4" />
                 Home
               </Link>
               <Link
                 href="/schedule"
-                className="px-3 py-2 text-sm font-medium text-foreground/80 hover:text-primary hover:bg-secondary/50 rounded-lg transition-colors"
+                className="px-3 py-2 text-sm font-medium text-foreground/80 hover:text-primary hover:bg-secondary/50 rounded-lg transition-colors flex items-center gap-2"
                 onClick={() => setIsMenuOpen(false)}
               >
+                <CalendarDays className="h-4 w-4" />
                 Schedule
               </Link>
               <Link
                 href="/news"
-                className="px-3 py-2 text-sm font-medium text-foreground/80 hover:text-primary hover:bg-secondary/50 rounded-lg transition-colors"
+                className="px-3 py-2 text-sm font-medium text-foreground/80 hover:text-primary hover:bg-secondary/50 rounded-lg transition-colors flex items-center gap-2"
                 onClick={() => setIsMenuOpen(false)}
               >
+                <Newspaper className="h-4 w-4" />
                 News
               </Link>
               <Link
                 href="/about"
-                className="px-3 py-2 text-sm font-medium text-foreground/80 hover:text-primary hover:bg-secondary/50 rounded-lg transition-colors"
+                className="px-3 py-2 text-sm font-medium text-foreground/80 hover:text-primary hover:bg-secondary/50 rounded-lg transition-colors flex items-center gap-2"
                 onClick={() => setIsMenuOpen(false)}
               >
+                <Info className="h-4 w-4" />
                 About
               </Link>
               {user ? (

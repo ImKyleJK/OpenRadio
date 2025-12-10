@@ -37,6 +37,7 @@ interface RadioContextType {
   isMuted: boolean
   isLive: boolean
   isLoadingNowPlaying: boolean
+  hasLoadedNowPlaying: boolean
   currentTrack: Track | null
   currentShow: Show | null
   recentTracks: Track[]
@@ -83,6 +84,7 @@ export function RadioProvider({ children }: { children: ReactNode }) {
   const [isMuted, setIsMuted] = useState(false)
   const [isLive, setIsLive] = useState(true)
   const [isLoadingNowPlaying, setIsLoadingNowPlaying] = useState(true)
+  const [hasLoadedNowPlaying, setHasLoadedNowPlaying] = useState(false)
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null)
   const [currentShow, setCurrentShow] = useState<Show | null>(null)
   const [recentTracks, setRecentTracks] = useState<Track[]>([])
@@ -166,6 +168,29 @@ export function RadioProvider({ children }: { children: ReactNode }) {
     setVisualizerEnabled((prev) => !prev)
   }, [])
 
+  const setFallbackNowPlaying = useCallback(() => {
+    setIsLive(true)
+    setCurrentTrack((prev) => ({
+      title: prev?.title || "Live Stream",
+      artist: prev?.artist || stationConfig.name,
+      artwork: prev?.artwork || stationConfig.logo || undefined,
+    }))
+    setCurrentShow((prev) => ({
+      name: prev?.name || "Live",
+      dj: prev?.dj || stationConfig.name,
+      startTime: prev?.startTime || "",
+      endTime: prev?.endTime || "",
+      artwork: prev?.artwork || stationConfig.logo || undefined,
+    }))
+    if (!recentTracks.length) {
+      setRecentTracks([
+        { title: "Live Stream", artist: stationConfig.name, artwork: stationConfig.logo || undefined },
+        { title: "Station IDs", artist: stationConfig.name, artwork: stationConfig.logo || undefined },
+        { title: "Music Mix", artist: stationConfig.name, artwork: stationConfig.logo || undefined },
+      ])
+    }
+  }, [recentTracks.length])
+
   const deriveStationShortcode = useCallback((url: string | undefined) => {
     if (!url) return null
     try {
@@ -182,7 +207,15 @@ export function RadioProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const fetchNowPlaying = useCallback(async () => {
-    if (!stationConfig.azuracastApiUrl) return
+    if (!stationConfig.azuracastApiUrl) {
+      setFallbackNowPlaying()
+      setIsLoadingNowPlaying(false)
+      setHasLoadedNowPlaying(true)
+      return
+    }
+    if (!hasLoadedNowPlaying) {
+      setIsLoadingNowPlaying(true)
+    }
 
     try {
       const res = await fetch(`${stationConfig.azuracastApiUrl.replace(/\/$/, "")}/nowplaying`, {
@@ -197,7 +230,11 @@ export function RadioProvider({ children }: { children: ReactNode }) {
         entries.find((entry: any) => entry?.station?.name?.toLowerCase().includes(shortcode)) ||
         entries[0]
 
-      if (!match) return
+      if (!match) {
+        setFallbackNowPlaying()
+        setIsLoadingNowPlaying(false)
+        return
+      }
 
       const nowPlaying = match.now_playing || {}
       const live = match.live || {}
@@ -209,7 +246,7 @@ export function RadioProvider({ children }: { children: ReactNode }) {
         title: song.title || song.text || "Unknown Track",
         artist: song.artist || "Unknown Artist",
         album: song.album,
-        artwork: song.art || currentTrack?.artwork,
+        artwork: song.art || currentTrack?.artwork || stationConfig.logo,
         duration: nowPlaying.duration,
         elapsed: nowPlaying.elapsed,
       })
@@ -220,7 +257,7 @@ export function RadioProvider({ children }: { children: ReactNode }) {
         startTime: live.is_live ? "Live now" : "",
         endTime: live.is_live ? "" : "",
         description: live.is_live ? "Broadcasting live" : "Automated playlist",
-        artwork: song.art || currentShow?.artwork,
+        artwork: song.art || currentShow?.artwork || stationConfig.logo,
       })
 
       if (Array.isArray(match.song_history)) {
@@ -229,7 +266,7 @@ export function RadioProvider({ children }: { children: ReactNode }) {
           .map((item: any) => ({
             title: item.song?.title || item.song?.text || "Unknown Track",
             artist: item.song?.artist || "Unknown Artist",
-            artwork: item.song?.art,
+            artwork: item.song?.art || stationConfig.logo,
             duration: item.duration,
             elapsed: item.elapsed,
           }))
@@ -237,10 +274,15 @@ export function RadioProvider({ children }: { children: ReactNode }) {
       }
 
       setListeners(listenersCount)
+      setHasLoadedNowPlaying(true)
     } catch (error) {
       console.error("Failed to load now playing data", error)
+      setFallbackNowPlaying()
+      setHasLoadedNowPlaying(true)
+    } finally {
+      setIsLoadingNowPlaying(false)
     }
-  }, [currentShow?.artwork, currentTrack?.artwork, deriveStationShortcode, listeners, streamUrl])
+  }, [currentShow, currentTrack, deriveStationShortcode, hasLoadedNowPlaying, listeners, setFallbackNowPlaying, streamUrl])
 
   // Simulate listener count updates
   useEffect(() => {
@@ -293,9 +335,12 @@ export function RadioProvider({ children }: { children: ReactNode }) {
     <RadioContext.Provider
       value={{
         isPlaying,
+        isBuffering,
         volume,
         isMuted,
         isLive,
+        isLoadingNowPlaying,
+        hasLoadedNowPlaying,
         currentTrack,
         currentShow,
         recentTracks,
