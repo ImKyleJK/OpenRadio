@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { getSession, createToken } from "@/lib/auth.server"
+import { updateUser } from "@/lib/users"
 import type { User } from "@/lib/auth"
 
 export async function PATCH(request: Request) {
@@ -12,14 +13,14 @@ export async function PATCH(request: Request) {
 
     const updates = await request.json()
 
-    // In production, update MongoDB document
-    const updatedUser: User = {
-      ...session.user,
-      ...updates,
-      // Prevent role escalation
-      role: session.user.role,
-      id: session.user.id,
-      email: session.user.email,
+    const sanitizedUpdates = { ...updates }
+    delete (sanitizedUpdates as Record<string, unknown>).role
+    delete (sanitizedUpdates as Record<string, unknown>).email
+
+    const updatedUser = (await updateUser(session.user.id, sanitizedUpdates)) as User | null
+
+    if (!updatedUser) {
+      return NextResponse.json({ error: "Update failed" }, { status: 500 })
     }
 
     // Create new token with updated user

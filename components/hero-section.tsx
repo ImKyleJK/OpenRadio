@@ -2,6 +2,8 @@
 
 import { useState } from "react"
 import { useRadio } from "@/context/radio-context"
+import { useAuth } from "@/context/auth-context"
+import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Play, Pause, Volume2, VolumeX, Heart, Users, Radio, Share2, BarChart3, Hand } from "lucide-react"
@@ -24,11 +26,14 @@ export function HeroSection() {
     listeners,
     isLoadingNowPlaying,
     hasLoadedNowPlaying,
-    visualizerEnabled,
-    toggleVisualizer,
+    visualizerMode,
+    cycleVisualizer,
   } = useRadio()
+  const { user } = useAuth()
 
   const [requestModalOpen, setRequestModalOpen] = useState(false)
+  const [liked, setLiked] = useState(false)
+  const { toast } = useToast()
 
   const backgroundImage = currentTrack?.artwork || currentShow?.artwork || "/abstract-music-waves.png"
   const djArtwork = hasLoadedNowPlaying ? currentShow?.artwork : undefined
@@ -210,13 +215,21 @@ export function HeroSection() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={toggleVisualizer}
+                  onClick={cycleVisualizer}
                   className={`h-9 w-9 transition-shadow ${
-                    visualizerEnabled
+                    visualizerMode === "wave"
                       ? "text-primary shadow-[0_0_16px_rgba(34,211,238,0.5)] ring-1 ring-primary/40"
-                      : "text-muted-foreground"
+                      : visualizerMode === "bars"
+                        ? "text-orange-400 shadow-[0_0_16px_rgba(251,146,60,0.5)] ring-1 ring-orange-400/40"
+                        : "text-muted-foreground"
                   } hover:text-foreground`}
-                  aria-label={visualizerEnabled ? "Disable visualizer" : "Enable visualizer"}
+                  aria-label={
+                    visualizerMode === "off"
+                      ? "Enable wave visualizer"
+                      : visualizerMode === "wave"
+                        ? "Switch to bars visualizer"
+                        : "Turn off visualizer"
+                  }
                 >
                   <BarChart3 className="h-5 w-5" />
                 </Button>
@@ -247,6 +260,37 @@ export function HeroSection() {
                   ) : (
                     <Play className="h-6 w-6 ml-0.5" />
                   )}
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    if (!user) {
+                      toast({
+                        variant: "destructive",
+                        title: "You must be signed in",
+                        description: (
+                          <span className="flex items-center gap-2 text-xs text-red-200">
+                            <Heart className="h-4 w-4 text-red-400" />
+                            Like tracks to keep favorites and stats.
+                            <a className="underline text-red-100" href="/register">
+                              Get started
+                            </a>
+                          </span>
+                        ),
+                        className:
+                          "border-red-500/70 bg-red-950/70 shadow-[0_0_12px_rgba(248,113,113,0.6)] text-red-100",
+                        duration: 5000,
+                      })
+                      return
+                    }
+                    setLiked((prev) => !prev)
+                  }}
+                  className={`h-9 w-9 ${liked ? "text-pink-500" : "text-muted-foreground"} hover:text-foreground`}
+                  aria-label={liked ? "Unlike track" : "Like track"}
+                >
+                  <Heart className={`h-5 w-5 ${liked ? "fill-pink-500" : ""}`} />
                 </Button>
 
                 <Button

@@ -63,6 +63,8 @@ export default function InstallPage() {
     primaryColor: stationConfig.primaryColor,
     timezone: "America/New_York",
   })
+  const [dbUri, setDbUri] = useState("")
+  const [jwtSecret, setJwtSecret] = useState("")
   const [logoPreview, setLogoPreview] = useState(stationConfig.logo)
   const [logoUploading, setLogoUploading] = useState(false)
   const [logoUploadError, setLogoUploadError] = useState("")
@@ -73,6 +75,11 @@ export default function InstallPage() {
     mountpoint: "/live",
     bitrate: "192",
     format: "mp3",
+  })
+
+  const [spotifyData, setSpotifyData] = useState({
+    clientId: process.env.SPOTIFY_CLIENT_ID || "",
+    clientSecret: process.env.SPOTIFY_CLIENT_SECRET || "",
   })
 
   const [adminData, setAdminData] = useState({
@@ -103,7 +110,7 @@ export default function InstallPage() {
       NEXT_PUBLIC_STATION_LOGO: process.env.NEXT_PUBLIC_STATION_LOGO,
       NEXT_PUBLIC_STREAM_URL: process.env.NEXT_PUBLIC_STREAM_URL,
       NEXT_PUBLIC_AZURACAST_API_URL: process.env.NEXT_PUBLIC_AZURACAST_API_URL,
-      MONGODB_URI: undefined,
+      MONGODB_URI: dbUri || process.env.MONGODB_URI,
     }
 
     for (let i = 0; i < preflightChecks.length; i++) {
@@ -177,6 +184,9 @@ export default function InstallPage() {
     }
 
     if (step === "admin") {
+      if (!dbUri.trim()) newErrors.dbUri = "MongoDB URI is required"
+      if (!spotifyData.clientId.trim()) newErrors.spotifyClientId = "Spotify Client ID is required"
+      if (!spotifyData.clientSecret.trim()) newErrors.spotifyClientSecret = "Spotify Client Secret is required"
       if (!adminData.email.trim()) newErrors.email = "Email is required"
       if (!adminData.email.includes("@")) newErrors.email = "Invalid email format"
       if (!adminData.password) newErrors.password = "Password is required"
@@ -259,6 +269,8 @@ export default function InstallPage() {
     setIsInstalling(true)
 
     try {
+      const effectiveJwtSecret = jwtSecret.trim() || crypto.randomUUID()
+
       const response = await fetch("/api/install/config", {
         method: "POST",
         headers: {
@@ -272,6 +284,10 @@ export default function InstallPage() {
           primaryColor: stationData.primaryColor.trim(),
           streamUrl: streamData.streamUrl.trim(),
           azuracastUrl: streamData.azuracastUrl.trim(),
+          mongoUri: dbUri.trim(),
+          jwtSecret: effectiveJwtSecret,
+          spotifyClientId: spotifyData.clientId.trim(),
+          spotifyClientSecret: spotifyData.clientSecret.trim(),
         }),
       })
 
@@ -279,10 +295,30 @@ export default function InstallPage() {
         throw new Error("Failed to persist configuration")
       }
 
+      const adminResponse = await fetch("/api/install/admin", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          mongoUri: dbUri.trim(),
+          email: adminData.email.trim(),
+          password: adminData.password,
+          displayName: adminData.displayName.trim(),
+        }),
+      })
+
+      if (!adminResponse.ok) {
+        const data = await adminResponse.json().catch(() => ({}))
+        throw new Error(data.error || "Failed to create admin")
+      }
+
       setCurrentStep("complete")
     } catch (error) {
       console.error("Installation failed", error)
-      setInstallError("Could not write configuration to .env.local. Check permissions and try again.")
+      setInstallError(
+        error instanceof Error ? error.message : "Could not write configuration to .env.local. Check permissions and try again.",
+      )
     } finally {
       setIsInstalling(false)
     }
@@ -622,6 +658,50 @@ export default function InstallPage() {
 
               <div className="space-y-4">
                 <div className="space-y-2">
+                  <Label htmlFor="dbUri">MongoDB URI *</Label>
+                  <Input
+                    id="dbUri"
+                    value={dbUri}
+                    onChange={(e) => setDbUri(e.target.value)}
+                    placeholder="mongodb+srv://user:password@cluster.mongodb.net/openradio"
+                  />
+                  {errors.dbUri && <p className="text-xs text-red-500">{errors.dbUri}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="spotifyClientId">Spotify Client ID *</Label>
+                  <Input
+                    id="spotifyClientId"
+                    value={spotifyData.clientId}
+                    onChange={(e) => setSpotifyData({ ...spotifyData, clientId: e.target.value })}
+                    placeholder="spotify client id"
+                  />
+                  {errors.spotifyClientId && <p className="text-xs text-red-500">{errors.spotifyClientId}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="spotifyClientSecret">Spotify Client Secret *</Label>
+                  <Input
+                    id="spotifyClientSecret"
+                    type="password"
+                    value={spotifyData.clientSecret}
+                    onChange={(e) => setSpotifyData({ ...spotifyData, clientSecret: e.target.value })}
+                    placeholder="spotify client secret"
+                  />
+                  {errors.spotifyClientSecret && <p className="text-xs text-red-500">{errors.spotifyClientSecret}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="jwtSecret">JWT Secret (optional)</Label>
+                  <Input
+                    id="jwtSecret"
+                    value={jwtSecret}
+                    onChange={(e) => setJwtSecret(e.target.value)}
+                    placeholder="Leave blank to auto-generate"
+                  />
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="displayName">Display Name *</Label>
                   <Input
                     id="displayName"
@@ -754,6 +834,8 @@ export default function InstallPage() {
                     <div>NEXT_PUBLIC_PRIMARY_COLOR={stationData.primaryColor}</div>
                     <div>NEXT_PUBLIC_STREAM_URL={streamData.streamUrl}</div>
                     <div>NEXT_PUBLIC_AZURACAST_API_URL={streamData.azuracastUrl}</div>
+                    <div>MONGODB_URI={dbUri}</div>
+                    <div>JWT_SECRET={jwtSecret || "[auto-generated]"}</div>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
                     Restart the dev server to see your station name, logo, and colors reflected everywhere.

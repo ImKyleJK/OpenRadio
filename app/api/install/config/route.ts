@@ -25,6 +25,10 @@ export async function POST(request: Request) {
     setIfString("NEXT_PUBLIC_PRIMARY_COLOR", body.primaryColor)
     setIfString("NEXT_PUBLIC_STREAM_URL", body.streamUrl)
     setIfString("NEXT_PUBLIC_AZURACAST_API_URL", body.azuracastUrl)
+    setIfString("MONGODB_URI", body.mongoUri)
+    setIfString("JWT_SECRET", body.jwtSecret)
+    setIfString("SPOTIFY_CLIENT_ID", body.spotifyClientId)
+    setIfString("SPOTIFY_CLIENT_SECRET", body.spotifyClientSecret)
 
     const envPath = path.join(process.cwd(), ".env.local")
     let existingLines: string[] = []

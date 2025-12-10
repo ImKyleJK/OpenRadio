@@ -43,13 +43,13 @@ interface RadioContextType {
   recentTracks: Track[]
   listeners: number
   activeListeners: ActiveListener[] // Added active listeners
-  visualizerEnabled: boolean // Added visualizer toggle state
+  visualizerMode: "wave" | "bars" | "off"
   audioRef: React.RefObject<HTMLAudioElement | null>
   analyserRef: React.RefObject<AnalyserNode | null>
   togglePlay: () => void
   setVolume: (volume: number) => void
   toggleMute: () => void
-  toggleVisualizer: () => void // Added visualizer toggle function
+  cycleVisualizer: () => void
 }
 
 const RadioContext = createContext<RadioContextType | null>(null)
@@ -90,7 +90,7 @@ export function RadioProvider({ children }: { children: ReactNode }) {
   const [recentTracks, setRecentTracks] = useState<Track[]>([])
   const [listeners, setListeners] = useState(127)
   const [activeListeners, setActiveListeners] = useState<ActiveListener[]>(mockActiveListeners) //
-  const [visualizerEnabled, setVisualizerEnabled] = useState(true) //
+  const [visualizerMode, setVisualizerMode] = useState<"wave" | "bars" | "off">("wave")
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
@@ -164,8 +164,8 @@ export function RadioProvider({ children }: { children: ReactNode }) {
     setIsMuted(!isMuted)
   }, [isMuted])
 
-  const toggleVisualizer = useCallback(() => {
-    setVisualizerEnabled((prev) => !prev)
+  const cycleVisualizer = useCallback(() => {
+    setVisualizerMode((prev) => (prev === "wave" ? "bars" : prev === "bars" ? "off" : "wave"))
   }, [])
 
   const setFallbackNowPlaying = useCallback(() => {
@@ -346,13 +346,13 @@ export function RadioProvider({ children }: { children: ReactNode }) {
         recentTracks,
         listeners,
         activeListeners, //
-        visualizerEnabled, //
+        visualizerMode,
         audioRef,
         analyserRef,
         togglePlay,
         setVolume,
         toggleMute,
-        toggleVisualizer, //
+        cycleVisualizer,
       }}
     >
       {children}

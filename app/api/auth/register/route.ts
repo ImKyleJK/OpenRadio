@@ -1,35 +1,33 @@
 import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { createToken } from "@/lib/auth.server"
-import type { User } from "@/lib/auth"
+import { createUser, findUserByEmail } from "@/lib/users"
 
-// In production, this would insert into MongoDB with bcrypt hashed password
 export async function POST(request: Request) {
   try {
     const { email, password, displayName } = await request.json()
 
-    // Validation
     if (!email || !password || !displayName) {
       return NextResponse.json({ error: "All fields are required" }, { status: 400 })
+    }
+
+    if (!email.includes("@")) {
+      return NextResponse.json({ error: "Invalid email format" }, { status: 400 })
     }
 
     if (password.length < 6) {
       return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 })
     }
 
-    // Create new user - in production, save to MongoDB with bcrypt
-    const newUser: User = {
-      id: Date.now().toString(),
-      email,
-      displayName,
-      role: "listener", // Default role
-      createdAt: new Date().toISOString(),
+    const existing = await findUserByEmail(email)
+    if (existing) {
+      return NextResponse.json({ error: "Email already registered" }, { status: 409 })
     }
 
-    // Create JWT token
+    const newUser = await createUser({ email, password, displayName, role: "listener" })
+
     const token = await createToken(newUser)
 
-    // Set cookie
     const cookieStore = await cookies()
     cookieStore.set("auth-token", token, {
       httpOnly: true,
